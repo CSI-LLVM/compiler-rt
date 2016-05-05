@@ -1,5 +1,6 @@
 include ../common.mk
-CC=clang
+CC=$(COMPILER_HOME)/bin/clang
+#LINK= $(COMPILER_HOME)/bin/llvm-link
 
 default: csirt.o
 
