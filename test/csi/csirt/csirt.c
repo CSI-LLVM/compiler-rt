@@ -30,7 +30,6 @@ typedef struct {
 
 // One FED collection type per type of FED table that we maintain across all units.
 typedef enum {
-    FED_COLL_GLOBAL,
     FED_COLL_BASICBLOCK,
     FED_COLL_FUNCTIONS,
     FED_COLL_FUNCTION_EXIT,
@@ -110,9 +109,6 @@ static inline fed_entry *get_fed_entry(fed_collection_type fed_type, uint64_t cs
 EXTERN_C
 
 void __csirt_unit_init(const char * const name,
-                       uint64_t num_entries,
-                       uint64_t *fed_id_base,
-                       fed_entry *fed_entries,
                        uint64_t num_func_entries,
                        uint64_t *fed_func_id_base,
                        fed_entry *fed_func_entries,
@@ -138,9 +134,6 @@ void __csirt_unit_init(const char * const name,
         csi_init_called = true;
     }
 
-    add_fed_table(FED_COLL_GLOBAL, num_entries, fed_entries);
-    update_ids(FED_COLL_GLOBAL, num_entries, fed_id_base);
-
     add_fed_table(FED_COLL_FUNCTIONS, num_func_entries, fed_func_entries);
     update_ids(FED_COLL_FUNCTIONS, num_func_entries, fed_func_id_base);
 
@@ -160,18 +153,10 @@ void __csirt_unit_init(const char * const name,
     update_ids(FED_COLL_STORE, num_store_entries, fed_store_id_base);
 
     // TODO(tyler): Make num_entries a struct as per API doc
-    __csi_unit_init(name, num_entries);
+    __csi_unit_init(name, num_func_entries);
 }
 
 // TODO(ddoucet): why does inlining these functions cause a crash?
-char *__csirt_get_filename(const uint64_t csi_id) {
-    return get_fed_entry(FED_COLL_GLOBAL, csi_id)->filename;
-}
-
-int32_t __csirt_get_line_number(const uint64_t csi_id) {
-    return get_fed_entry(FED_COLL_GLOBAL, csi_id)->line_number;
-}
-
 char *__csi_fed_func_get_filename(const uint64_t func_id) {
     return get_fed_entry(FED_COLL_FUNCTIONS, func_id)->filename;
 }
