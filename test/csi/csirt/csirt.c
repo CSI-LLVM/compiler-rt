@@ -29,14 +29,19 @@ typedef struct {
 static fed_table_collection fed_collection;
 static bool fed_collection_initialized = false;
 
+static void initialize_fed_collections() {
+    fed_collection.total_num_entries = 0;
+    fed_collection.num_fed_tables = 0;
+    fed_collection.capacity = 0;
+    fed_collection.tables = NULL;
+
+    fed_collection_initialized = true;
+}
+
 static void ensure_fed_collection_capacity() {
     bool need_realloc = false;
     if (!fed_collection_initialized) {
-        fed_collection.total_num_entries = 0;
-        fed_collection.num_fed_tables = 0;
-        fed_collection.capacity = 0;
-        fed_collection.tables = NULL;
-        fed_collection_initialized = true;
+        initialize_fed_collections();
     }
     if (fed_collection.num_fed_tables == fed_collection.capacity) {
         if (fed_collection.tables) {
