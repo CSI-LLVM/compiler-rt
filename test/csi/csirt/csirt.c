@@ -33,6 +33,7 @@ typedef enum {
     FED_COLL_GLOBAL,
     FED_COLL_BASICBLOCK,
     FED_COLL_FUNCTIONS,
+    FED_COLL_FUNCTION_EXIT,
     FED_COLL_CALLSITE,
     NUM_FED_COLLS // Must be last
 } fed_collection_type;
@@ -113,6 +114,9 @@ void __csirt_unit_init(const char * const name,
                        uint64_t num_func_entries,
                        uint64_t *fed_func_id_base,
                        fed_entry *fed_func_entries,
+                       uint64_t num_func_exit_entries,
+                       uint64_t *fed_func_exit_id_base,
+                       fed_entry *fed_func_exit_entries,
                        uint64_t num_bb_entries,
                        uint64_t *fed_bb_id_base,
                        fed_entry *fed_bb_entries,
@@ -131,6 +135,9 @@ void __csirt_unit_init(const char * const name,
 
     add_fed_table(FED_COLL_FUNCTIONS, num_func_entries, fed_func_entries);
     update_ids(FED_COLL_FUNCTIONS, num_func_entries, fed_func_id_base);
+
+    add_fed_table(FED_COLL_FUNCTION_EXIT, num_func_exit_entries, fed_func_exit_entries);
+    update_ids(FED_COLL_FUNCTION_EXIT, num_func_exit_entries, fed_func_exit_id_base);
 
     add_fed_table(FED_COLL_BASICBLOCK, num_bb_entries, fed_bb_entries);
     update_ids(FED_COLL_BASICBLOCK, num_bb_entries, fed_bb_id_base);
@@ -157,6 +164,14 @@ char *__csi_fed_func_get_filename(const uint64_t func_id) {
 
 int32_t __csi_fed_func_get_line_number(const uint64_t func_id) {
     return get_fed_entry(FED_COLL_FUNCTIONS, func_id)->line_number;
+}
+
+char *__csi_fed_func_exit_get_filename(const uint64_t func_exit_id) {
+    return get_fed_entry(FED_COLL_FUNCTION_EXIT, func_exit_id)->filename;
+}
+
+int32_t __csi_fed_func_exit_get_line_number(const uint64_t func_exit_id) {
+    return get_fed_entry(FED_COLL_FUNCTION_EXIT, func_exit_id)->line_number;
 }
 
 char *__csi_fed_bb_get_filename(const uint64_t bb_id) {
