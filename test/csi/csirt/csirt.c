@@ -29,21 +29,31 @@ typedef struct {
 static fed_table_collection fed_collection;
 static bool fed_collection_initialized = false;
 
-static inline void add_fed_table(uint64_t num_entries, fed_entry *fed_entries) {
+static void ensure_fed_collection_capacity() {
     bool need_realloc = false;
-    if (!fed_collection_initialized || fed_collection.num_fed_tables == fed_collection.capacity) {
+    if (!fed_collection_initialized) {
+        fed_collection.total_num_entries = 0;
+        fed_collection.num_fed_tables = 0;
+        fed_collection.capacity = 0;
+        fed_collection.tables = NULL;
+        fed_collection_initialized = true;
+    }
+    if (fed_collection.num_fed_tables == fed_collection.capacity) {
         if (fed_collection.tables) {
             fed_collection.capacity *= 2;
         } else {
             fed_collection.capacity = DEFAULT_NUM_FED_TABLES;
         }
         need_realloc = true;
-        fed_collection_initialized = true;
     }
     if (need_realloc) {
         fed_collection.tables = (fed_table *)realloc(fed_collection.tables,
                                                      fed_collection.capacity * sizeof(fed_table *));
     }
+}
+
+static inline void add_fed_table(uint64_t num_entries, fed_entry *fed_entries) {
+    ensure_fed_collection_capacity();
     fed_table new_table;
     new_table.num_entries = num_entries;
     new_table.entries = fed_entries;
