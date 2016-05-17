@@ -4,27 +4,26 @@
 
 #include "csirt.h"
 
+EXTERN_C
 typedef struct {
     int32_t line_number;
     char *filename;
 } fed_entry;
+EXTERN_C_END
 
 static const int DEFAULT_FED_TABLE_LENGTH = 128;
-
-#define UNUSED_PARAM(x)  ((void)(x))
-
-static bool csi_init_called;
+static bool csi_init_called = false;
 
 // The sum of the num_units for each unit initialized. When a unit is
 // initialized, we update their inst_id_base to the current value of
 // total_instrumentation, then add their number of instrumentations to
 // total_instrumentation, giving each tix a globally unique set of csi_id
 // values.
-static uint64_t total_instrumentation;
+static uint64_t total_instrumentation = 0;
 
-static uint64_t fed_table_length, fed_table_capacity;
-static fed_entry **fed_table;
-static uint64_t *list_size;
+static uint64_t fed_table_length = 0, fed_table_capacity = 0;
+static fed_entry **fed_table = NULL;
+static uint64_t *list_size = NULL;
 
 static inline void add_to_fed_table(fed_entry *entries, uint64_t num_inst) {
     if (fed_table_length == fed_table_capacity) {
@@ -48,6 +47,19 @@ static inline void update_ids(uint64_t num_inst, uint64_t *inst_id_base) {
     total_instrumentation += num_inst;
 }
 
+static inline fed_entry *get_fed_entry(uint64_t csi_id) {
+    // TODO(ddoucet): threadsafety
+    uint64_t sum = 0;
+    for (uint64_t i = 0; i < fed_table_length; i++) {
+        if (csi_id < sum + list_size[i])
+            return &fed_table[i][csi_id - sum];
+        sum += list_size[i];
+    }
+
+    fprintf(stderr, "ERROR: Unable to find FED entry for csi_id %lu\n", csi_id);
+    exit(-1);
+}
+
 EXTERN_C
 
 void __csirt_unit_init(const char * const name,
@@ -65,23 +77,6 @@ void __csirt_unit_init(const char * const name,
     update_ids(num_inst, inst_id_base);
     __csi_unit_init(name, num_inst);
 }
-
-EXTERN_C_END
-
-static inline fed_entry *get_fed_entry(uint64_t csi_id) {
-    // TODO(ddoucet): threadsafety
-    uint64_t sum = 0;
-    for (uint64_t i = 0; i < fed_table_length; i++) {
-        if (csi_id < sum + list_size[i])
-            return &fed_table[i][csi_id - sum];
-        sum += list_size[i];
-    }
-
-    fprintf(stderr, "ERROR: Unable to find FED entry for csi_id %lu\n", csi_id);
-    exit(-1);
-}
-
-EXTERN_C
 
 // TODO(ddoucet): why does inlining these functions cause a crash?
 char *__csirt_get_filename(const uint64_t csi_id) {
