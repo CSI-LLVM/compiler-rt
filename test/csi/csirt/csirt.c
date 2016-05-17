@@ -29,7 +29,7 @@ typedef struct {
 } fed_collection;
 
 // One FED collection type per type of FED table that we maintain across all units.
-typedef enum { FED_COLL_GLOBAL, NUM_FED_COLLS } fed_collection_type;
+typedef enum { FED_COLL_GLOBAL, FED_COLL_FUNCTIONS, NUM_FED_COLLS } fed_collection_type;
 
 static fed_collection *fed_collections = NULL;
 static bool fed_collections_initialized = false;
@@ -103,7 +103,10 @@ EXTERN_C
 void __csirt_unit_init(const char * const name,
                        uint64_t num_entries,
                        uint64_t *fed_id_base,
-                       fed_entry *fed_entries) {
+                       fed_entry *fed_entries,
+                       uint64_t num_func_entries,
+                       uint64_t *fed_func_id_base,
+                       fed_entry *fed_func_entries) {
     // TODO(ddoucet): threadsafety
     if (!csi_init_called) {
         // TODO(ddoucet): what to call this with?
@@ -113,6 +116,10 @@ void __csirt_unit_init(const char * const name,
 
     add_fed_table(FED_COLL_GLOBAL, num_entries, fed_entries);
     update_ids(FED_COLL_GLOBAL, num_entries, fed_id_base);
+
+    add_fed_table(FED_COLL_FUNCTIONS, num_func_entries, fed_func_entries);
+    update_ids(FED_COLL_FUNCTIONS, num_func_entries, fed_func_id_base);
+
     __csi_unit_init(name, num_entries);
 }
 
@@ -123,6 +130,14 @@ char *__csirt_get_filename(const uint64_t csi_id) {
 
 int32_t __csirt_get_line_number(const uint64_t csi_id) {
     return get_fed_entry(FED_COLL_GLOBAL, csi_id)->line_number;
+}
+
+char *__csi_fed_func_get_filename(const uint64_t func_id) {
+    return get_fed_entry(FED_COLL_FUNCTIONS, func_id)->filename;
+}
+
+int32_t __csi_fed_func_get_line_number(const uint64_t func_id) {
+    return get_fed_entry(FED_COLL_FUNCTIONS, func_id)->line_number;
 }
 
 bool __csirt_callsite_target_unknown(uint64_t csi_id, uint64_t func_id) {
