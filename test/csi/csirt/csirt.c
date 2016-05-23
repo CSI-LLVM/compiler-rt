@@ -152,8 +152,14 @@ void __csirt_unit_init(const char * const name,
     add_fed_table(FED_COLL_STORE, num_store_entries, fed_store_entries);
     update_ids(FED_COLL_STORE, num_store_entries, fed_store_id_base);
 
-    // TODO(tyler): Make num_entries a struct as per API doc
-    __csi_unit_init(name, num_func_entries);
+    instrumentation_counts_t counts;
+    counts.num_bb = num_bb_entries;
+    counts.num_callsite = num_callsite_entries;
+    counts.num_func = num_func_entries;
+    counts.num_func_exit = num_func_exit_entries;
+    counts.num_load = num_load_entries;
+    counts.num_store = num_store_entries;
+    __csi_unit_init(name, counts);
 }
 
 // TODO(ddoucet): why does inlining these functions cause a crash?

@@ -5,7 +5,7 @@ extern "C" {
 
 WEAK void __csi_init(const char * const name) {}
 WEAK void __csi_unit_init(const char * const file_name,
-                          const uint64_t num_inst) {}
+                          const instrumentation_counts_t counts) {}
 
 WEAK void __csi_before_load(const uint64_t csi_id, const void *addr, const uint32_t num_bytes, const uint64_t prop) {}
 WEAK void __csi_after_load(const uint64_t csi_id, const void *addr, const uint32_t num_bytes, const uint64_t prop) {}

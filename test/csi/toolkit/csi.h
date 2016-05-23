@@ -19,8 +19,17 @@ EXTERN_C
 
 WEAK void __csi_init(const char * const name);
 
+typedef struct {
+  uint64_t num_bb;
+  uint64_t num_callsite;
+  uint64_t num_func;
+  uint64_t num_func_exit;
+  uint64_t num_load;
+  uint64_t num_store;
+} instrumentation_counts_t;
+
 WEAK void __csi_unit_init(const char * const file_name,
-                          const uint64_t num_inst);
+                          const instrumentation_counts_t counts);
 
 WEAK void __csi_before_load(const uint64_t csi_id,
                             const void *addr,
