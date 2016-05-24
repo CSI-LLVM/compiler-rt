@@ -28,6 +28,11 @@ typedef struct {
   uint64_t num_store;
 } instrumentation_counts_t;
 
+typedef struct {
+  uint64_t first_id;
+  uint64_t last_id;
+} range_t;
+
 WEAK void __csi_unit_init(const char * const file_name,
                           const instrumentation_counts_t counts);
 

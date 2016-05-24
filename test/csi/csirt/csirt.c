@@ -42,6 +42,30 @@ typedef enum {
 static fed_collection *fed_collections = NULL;
 static bool fed_collections_initialized = false;
 
+// A rel table is a flat list of IDs.  This is used to describe
+// one-to-one ID relationships (e.g. basic block to function ID, as a
+// basic block can only belong to one function).
+typedef struct {
+    uint64_t num_ids;
+    uint64_t *ids;
+} rel_table;
+
+// A rel "range" table is a flat list of ID ranges. This is used
+// to describe one-to-many ID relationships (e.g. function ID to basic
+// block ID range, as a function can contain more than one basic
+// block).
+typedef struct {
+    uint64_t num_ranges;
+    range_t *ranges;
+} rel_range_table;
+
+// Function signature for the CSI-generated function that updates all
+// relation tables when a unit is loaded.
+typedef void (*__csi_init_rel_tables_t)(rel_table *rel_bb_to_func, rel_range_table *rel_func_to_bb);
+
+static rel_table rel_bb_to_func;
+static rel_range_table rel_func_to_bb;
+
 static void initialize_fed_collections() {
     fed_collections = (fed_collection *)malloc(NUM_FED_COLLS * sizeof(fed_collection));
     for (unsigned i = 0; i < NUM_FED_COLLS; i++) {
@@ -106,6 +130,24 @@ static inline fed_entry *get_fed_entry(fed_collection_type fed_type, uint64_t cs
     exit(-1);
 }
 
+static inline void realloc_rel_table(rel_table *table, uint64_t num_entries) {
+    table->num_ids += num_entries;
+    table->ids = (uint64_t *)realloc(table->ids,
+                                     table->num_ids * sizeof(uint64_t));
+}
+
+static inline void realloc_rel_range_table(rel_range_table *table, uint64_t num_entries) {
+    table->num_ranges += num_entries;
+    table->ranges = (range_t *)realloc(table->ranges,
+                                       table->num_ranges * sizeof(range_t));
+}
+
+static inline void realloc_rel_tables(uint64_t num_bb_to_func_rel_entries,
+                                      uint64_t num_func_to_bb_rel_entries) {
+    realloc_rel_table(&rel_bb_to_func, num_bb_to_func_rel_entries);
+    realloc_rel_range_table(&rel_func_to_bb, num_func_to_bb_rel_entries);
+}
+
 EXTERN_C
 
 void __csirt_unit_init(const char * const name,
@@ -126,7 +168,10 @@ void __csirt_unit_init(const char * const name,
                        fed_entry *fed_load_entries,
                        uint64_t num_store_entries,
                        uint64_t *fed_store_id_base,
-                       fed_entry *fed_store_entries) {
+                       fed_entry *fed_store_entries,
+                       uint64_t num_bb_to_func_rel_entries,
+                       uint64_t num_func_to_bb_rel_entries,
+                       __csi_init_rel_tables_t rel_table_init) {
     // TODO(ddoucet): threadsafety
     if (!csi_init_called) {
         // TODO(ddoucet): what to call this with?
@@ -151,6 +196,9 @@ void __csirt_unit_init(const char * const name,
 
     add_fed_table(FED_COLL_STORE, num_store_entries, fed_store_entries);
     update_ids(FED_COLL_STORE, num_store_entries, fed_store_id_base);
+
+    realloc_rel_tables(num_bb_to_func_rel_entries, num_func_to_bb_rel_entries);
+    rel_table_init(&rel_bb_to_func, &rel_func_to_bb);
 
     instrumentation_counts_t counts;
     counts.num_bb = num_bb_entries;
@@ -214,5 +262,17 @@ int32_t __csi_fed_store_get_line_number(const uint64_t store_id) {
 bool __csirt_callsite_target_unknown(uint64_t csi_id, uint64_t func_id) {
     return func_id == 0xffffffffffffffff;
 }
+
+uint64_t __csi_rel_bb_to_func(uint64_t bb_id) {
+    return 0;
+}
+
+range_t __csi_rel_func_to_bb(uint64_t func_id) {
+    range_t result;
+    result.first_id = 0;
+    result.last_id = 0;
+    return result;
+}
+
 
 EXTERN_C_END
