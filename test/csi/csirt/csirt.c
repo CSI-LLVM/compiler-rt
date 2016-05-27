@@ -264,14 +264,11 @@ bool __csirt_callsite_target_unknown(uint64_t csi_id, uint64_t func_id) {
 }
 
 uint64_t __csi_rel_bb_to_func(uint64_t bb_id) {
-    return 0;
+    return rel_bb_to_func.ids[bb_id];
 }
 
 range_t __csi_rel_func_to_bb(uint64_t func_id) {
-    range_t result;
-    result.first_id = 0;
-    result.last_id = 0;
-    return result;
+    return rel_func_to_bb.ranges[func_id];
 }
 
 
