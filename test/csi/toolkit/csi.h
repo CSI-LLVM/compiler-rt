@@ -17,6 +17,8 @@
 // API function signatures
 EXTERN_C
 
+typedef uint64_t csi_id_t;
+
 WEAK void __csi_init(const char * const name);
 
 typedef struct {
