@@ -14,7 +14,8 @@ typedef struct {
     char *filename;
 } fed_entry;
 
-// A FED table is a flat list of FED entries, indexed by a CSI ID.
+// A FED table is a flat list of FED entries, indexed by a CSI
+// ID. Each FED table has its own private ID space.
 typedef struct {
     uint64_t num_entries;
     fed_entry *entries;
@@ -157,9 +158,14 @@ static inline void add_fed_table(fed_collection_type fed_type, uint64_t num_entr
     coll->tables[coll->num_fed_tables++] = new_table;
 }
 
-// TODO document
+// The unit-local counter pointed to by 'fed_id_base' keeps track of
+// that unit's "base" ID value of the given type (recall that there is
+// a private ID space per FED type). The "base" ID value is the global
+// ID that corresponds to the unit's local ID 0. This function stores
+// the correct value into a unit's base ID.
 static inline void update_ids(fed_collection_type fed_type, uint64_t num_entries, uint64_t *fed_id_base) {
     fed_collection *coll = &fed_collections[fed_type];
+    // The base ID is the current number of FED entries so far
     *fed_id_base = coll->total_num_entries;
     coll->total_num_entries += num_entries;
 }
@@ -211,6 +217,8 @@ static inline void realloc_rel_tables(uint64_t num_bb_to_func_rel_entries,
 
 EXTERN_C
 
+// A call to this is inserted by the CSI compiler pass, and occurs
+// before main().
 void __csirt_unit_init(const char * const name,
                        uint64_t num_func_entries,
                        uint64_t *fed_func_id_base,
@@ -240,6 +248,7 @@ void __csirt_unit_init(const char * const name,
         csi_init_called = true;
     }
 
+    // Add all FED tables from the new unit
     add_fed_table(FED_COLL_FUNCTIONS, num_func_entries, fed_func_entries);
     update_ids(FED_COLL_FUNCTIONS, num_func_entries, fed_func_id_base);
 
@@ -258,9 +267,11 @@ void __csirt_unit_init(const char * const name,
     add_fed_table(FED_COLL_STORE, num_store_entries, fed_store_entries);
     update_ids(FED_COLL_STORE, num_store_entries, fed_store_id_base);
 
+    // Add all relationship tables from the new unit
     realloc_rel_tables(num_bb_to_func_rel_entries, num_func_to_bb_rel_entries);
     rel_table_init(&rel_bb_to_func, &rel_func_to_bb);
 
+    // Call into the tool implementation.
     instrumentation_counts_t counts;
     counts.num_bb = num_bb_entries;
     counts.num_callsite = num_callsite_entries;
