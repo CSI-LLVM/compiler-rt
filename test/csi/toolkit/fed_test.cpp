@@ -65,7 +65,7 @@ void __csi_bb_exit(const csi_id_t bb_id) {
 
 void __csi_before_callsite(const csi_id_t callsite_id, const csi_id_t func_id) {
     print_call("__csi_before_callsite", __csi_fed_get_callsite(callsite_id));
-    if (__csirt_callsite_target_unknown(callsite_id, func_id)) {
+    if (__csirt_is_callsite_target_unknown(callsite_id, func_id)) {
         printf("  (unknown target)\n");
     } else {
         source_loc_t func = __csi_fed_get_func(func_id);
@@ -75,7 +75,7 @@ void __csi_before_callsite(const csi_id_t callsite_id, const csi_id_t func_id) {
 
 void __csi_after_callsite(const csi_id_t callsite_id, const csi_id_t func_id) {
     print_call("__csi_after_callsite", __csi_fed_get_callsite(callsite_id));
-    if (__csirt_callsite_target_unknown(callsite_id, func_id)) {
+    if (__csirt_is_callsite_target_unknown(callsite_id, func_id)) {
         printf("  (unknown target)\n");
     } else {
         source_loc_t func = __csi_fed_get_func(func_id);

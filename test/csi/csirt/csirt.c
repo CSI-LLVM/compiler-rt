@@ -308,7 +308,7 @@ source_loc_t __csi_fed_get_store(const csi_id_t store_id) {
     return get_fed_entry(FED_COLL_STORE, store_id);
 }
 
-bool __csirt_callsite_target_unknown(const csi_id_t callsite_id, const csi_id_t func_id) {
+bool __csirt_is_callsite_target_unknown(const csi_id_t callsite_id, const csi_id_t func_id) {
     return func_id == -1;
 }
 
