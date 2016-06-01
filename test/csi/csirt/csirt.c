@@ -49,7 +49,7 @@ typedef enum {
 // ID, as a basic block can only belong to one function).
 typedef struct {
     uint64_t num_ids;
-    uint64_t *ids;
+    csi_id_t *ids;
 } rel_table;
 
 // A relationship "range" table is a flat list of ID ranges. This is
@@ -161,7 +161,7 @@ static inline void add_fed_table(fed_collection_type fed_type, uint64_t num_entr
 // a private ID space per FED type). The "base" ID value is the global
 // ID that corresponds to the unit's local ID 0. This function stores
 // the correct value into a unit's base ID.
-static inline void update_ids(fed_collection_type fed_type, uint64_t num_entries, uint64_t *fed_id_base) {
+static inline void update_ids(fed_collection_type fed_type, uint64_t num_entries, csi_id_t *fed_id_base) {
     fed_collection *coll = &fed_collections[fed_type];
     // The base ID is the current number of FED entries so far
     *fed_id_base = coll->total_num_entries;
@@ -172,7 +172,7 @@ static inline void update_ids(fed_collection_type fed_type, uint64_t num_entries
 // CSI ID.
 static inline source_loc_t get_fed_entry(fed_collection_type fed_type, const csi_id_t csi_id) {
     // TODO(ddoucet): threadsafety
-    uint64_t sum = 0;
+    csi_id_t sum = 0;
     fed_collection *coll = &fed_collections[fed_type];
     for (csi_id_t i = 0; i < coll->num_fed_tables; i++) {
         fed_table *table = &coll->tables[i];
@@ -188,8 +188,8 @@ static inline source_loc_t get_fed_entry(fed_collection_type fed_type, const csi
 // entries.
 static inline void realloc_rel_table(rel_table *table, uint64_t num_entries) {
     table->num_ids += num_entries;
-    table->ids = (uint64_t *)realloc(table->ids,
-                                     table->num_ids * sizeof(uint64_t));
+    table->ids = (csi_id_t *)realloc(table->ids,
+                                     table->num_ids * sizeof(csi_id_t));
 }
 
 // Enlarge the given relationship table to support 'num_entries' new
@@ -218,31 +218,30 @@ EXTERN_C
 // before main().
 void __csirt_unit_init(const char * const name,
                        uint64_t num_func_entries,
-                       uint64_t *fed_func_id_base,
+                       csi_id_t *fed_func_id_base,
                        source_loc_t *fed_func_entries,
                        uint64_t num_func_exit_entries,
-                       uint64_t *fed_func_exit_id_base,
+                       csi_id_t *fed_func_exit_id_base,
                        source_loc_t *fed_func_exit_entries,
                        uint64_t num_bb_entries,
-                       uint64_t *fed_bb_id_base,
+                       csi_id_t *fed_bb_id_base,
                        source_loc_t *fed_bb_entries,
                        uint64_t num_callsite_entries,
-                       uint64_t *fed_callsite_id_base,
+                       csi_id_t *fed_callsite_id_base,
                        source_loc_t *fed_callsite_entries,
                        uint64_t num_load_entries,
-                       uint64_t *fed_load_id_base,
+                       csi_id_t *fed_load_id_base,
                        source_loc_t *fed_load_entries,
                        uint64_t num_store_entries,
-                       uint64_t *fed_store_id_base,
+                       csi_id_t *fed_store_id_base,
                        source_loc_t *fed_store_entries,
                        uint64_t num_bb_to_func_rel_entries,
-                       uint64_t num_func_to_bb_rel_entries,
+                       csi_id_t num_func_to_bb_rel_entries,
                        __csi_init_rel_tables_t rel_table_init,
                        __csi_init_callsite_to_functions callsite_to_func_init) {
     // TODO(ddoucet): threadsafety
     if (!csi_init_called) {
-        // TODO(ddoucet): what to call this with?
-        __csi_init("TODO: give the actual name here");
+        __csi_init();
         csi_init_called = true;
     }
 

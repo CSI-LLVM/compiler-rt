@@ -19,8 +19,6 @@ EXTERN_C
 
 typedef uint64_t csi_id_t;
 
-WEAK void __csi_init(const char * const name);
-
 typedef struct {
   uint64_t num_bb;
   uint64_t num_callsite;
@@ -31,48 +29,45 @@ typedef struct {
 } instrumentation_counts_t;
 
 typedef struct {
-  uint64_t first_id;
-  uint64_t last_id;
+  csi_id_t first_id;
+  csi_id_t last_id;
 } range_t;
+
+WEAK void __csi_init();
 
 WEAK void __csi_unit_init(const char * const file_name,
                           const instrumentation_counts_t counts);
 
-WEAK void __csi_before_load(const uint64_t csi_id,
+WEAK void __csi_before_load(const csi_id_t load_id,
                             const void *addr,
                             const uint32_t num_bytes,
                             const uint64_t prop);
 
-WEAK void __csi_after_load(const uint64_t csi_id,
+WEAK void __csi_after_load(const csi_id_t load_id,
                            const void *addr,
                            const uint32_t num_bytes,
                            const uint64_t prop);
 
-WEAK void __csi_before_store(const uint64_t csi_id,
+WEAK void __csi_before_store(const csi_id_t store_id,
                              const void *addr,
                              const uint32_t num_bytes,
                              const uint64_t prop);
 
-WEAK void __csi_after_store(const uint64_t csi_id,
+WEAK void __csi_after_store(const csi_id_t store_id,
                             const void *addr,
                             const uint32_t num_bytes,
                             const uint64_t prop);
 
-WEAK void __csi_func_entry(const uint64_t csi_id,
-                           const void * const function,
-                           const void * const return_addr,
-                           const char * const func_name);
+WEAK void __csi_func_entry(const csi_id_t func_id);
 
-WEAK void __csi_func_exit(const uint64_t csi_id,
-                          const void * const function,
-                          const void * const return_addr,
-                          const char * const func_name);
+WEAK void __csi_func_exit(const csi_id_t func_exit_id,
+                          const csi_id_t func_id);
 
-WEAK void __csi_bb_entry(const uint64_t csi_id);
+WEAK void __csi_bb_entry(const csi_id_t bb_id);
 
-WEAK void __csi_bb_exit(const uint64_t csi_id);
+WEAK void __csi_bb_exit(const csi_id_t bb_id);
 
-WEAK void __csi_before_callsite(uint64_t csi_id, uint64_t func_id);
+WEAK void __csi_before_callsite(csi_id_t callsite_id, csi_id_t func_id);
 
 EXTERN_C_END
 

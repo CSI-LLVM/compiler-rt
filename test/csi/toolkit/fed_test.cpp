@@ -10,8 +10,8 @@ static inline void print_call(const char *const msg,
            msg);
 }
 
-void __csi_init(const char * const name) {
-    printf("__csi_init %s\n", name);
+void __csi_init() {
+    printf("__csi_init\n");
 }
 
 void __csi_unit_init(const char *const file_name,
@@ -47,17 +47,12 @@ void __csi_after_store(const csi_id_t store_id,
     print_call("__csi_after_store", __csi_fed_get_store(store_id));
 }
 
-void __csi_func_entry(const csi_id_t func_id,
-                      const void * const function,
-                      const void * const return_addr,
-                      const char * const func_name) {
+void __csi_func_entry(const csi_id_t func_id) {
     print_call("__csi_func_entry", __csi_fed_get_func(func_id));
 }
 
 void __csi_func_exit(const csi_id_t func_exit_id,
-                     const void * const function,
-                     const void * const return_addr,
-                     const char * const func_name) {
+                     const csi_id_t func_id) {
     print_call("__csi_func_exit", __csi_fed_get_func_exit(func_exit_id));
 }
 
@@ -69,7 +64,7 @@ void __csi_bb_exit(const csi_id_t bb_id) {
     print_call("__csi_bb_exit", __csi_fed_get_bb(bb_id));
 }
 
-void __csi_before_callsite(uint64_t callsite_id, uint64_t func_id) {
+void __csi_before_callsite(const csi_id_t callsite_id, const csi_id_t func_id) {
     print_call("__csi_before_callsite", __csi_fed_get_callsite(callsite_id));
     if (__csirt_callsite_target_unknown(callsite_id, func_id)) {
         printf("  (unknown target)\n");
