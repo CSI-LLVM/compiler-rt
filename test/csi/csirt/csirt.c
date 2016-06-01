@@ -8,17 +8,11 @@
 // Front end data (FED) table structures.
 // ------------------------------------------------------------------------
 
-// A FED (front end data) entry consists of a line number and a source filename.
-typedef struct {
-    int32_t line_number;
-    char *filename;
-} fed_entry;
-
 // A FED table is a flat list of FED entries, indexed by a CSI
 // ID. Each FED table has its own private ID space.
 typedef struct {
     uint64_t num_entries;
-    fed_entry *entries;
+    source_loc_t *entries;
 } fed_table;
 
 // A FED "collection" is a list of FED tables of a particular type
@@ -55,7 +49,7 @@ typedef enum {
 // ID, as a basic block can only belong to one function).
 typedef struct {
     uint64_t num_ids;
-    uint64_t *ids;
+    csi_id_t *ids;
 } rel_table;
 
 // A relationship "range" table is a flat list of ID ranges. This is
@@ -152,7 +146,7 @@ static void ensure_fed_collection_capacity(fed_collection_type fed_type) {
 // new FED table is passed as a pointer to its list of entries
 // 'fed_entries'. The number of entries in 'fed_entries' is
 // 'num_entries'.
-static inline void add_fed_table(fed_collection_type fed_type, uint64_t num_entries, fed_entry *fed_entries) {
+static inline void add_fed_table(fed_collection_type fed_type, uint64_t num_entries, source_loc_t *fed_entries) {
     ensure_fed_collection_capacity(fed_type);
     fed_collection *coll = &fed_collections[fed_type];
 
@@ -167,7 +161,7 @@ static inline void add_fed_table(fed_collection_type fed_type, uint64_t num_entr
 // a private ID space per FED type). The "base" ID value is the global
 // ID that corresponds to the unit's local ID 0. This function stores
 // the correct value into a unit's base ID.
-static inline void update_ids(fed_collection_type fed_type, uint64_t num_entries, uint64_t *fed_id_base) {
+static inline void update_ids(fed_collection_type fed_type, uint64_t num_entries, csi_id_t *fed_id_base) {
     fed_collection *coll = &fed_collections[fed_type];
     // The base ID is the current number of FED entries so far
     *fed_id_base = coll->total_num_entries;
@@ -176,27 +170,26 @@ static inline void update_ids(fed_collection_type fed_type, uint64_t num_entries
 
 // Return the FED entry of the given type, corresponding to the given
 // CSI ID.
-static inline fed_entry *get_fed_entry(fed_collection_type fed_type, uint64_t csi_id) {
+static inline source_loc_t get_fed_entry(fed_collection_type fed_type, const csi_id_t csi_id) {
     // TODO(ddoucet): threadsafety
-    uint64_t sum = 0;
+    csi_id_t sum = 0;
     fed_collection *coll = &fed_collections[fed_type];
-    for (uint64_t i = 0; i < coll->num_fed_tables; i++) {
+    for (csi_id_t i = 0; i < coll->num_fed_tables; i++) {
         fed_table *table = &coll->tables[i];
         if (csi_id < sum + table->num_entries)
-            return &table->entries[csi_id - sum];
+            return table->entries[csi_id - sum];
         sum += table->num_entries;
     }
 
-    fprintf(stderr, "ERROR: Unable to find FED entry for csi_id %lu\n", csi_id);
-    exit(-1);
+    return (source_loc_t){-1, ""};
 }
 
 // Enlarge the given relationship table to support 'num_entries' new
 // entries.
 static inline void realloc_rel_table(rel_table *table, uint64_t num_entries) {
     table->num_ids += num_entries;
-    table->ids = (uint64_t *)realloc(table->ids,
-                                     table->num_ids * sizeof(uint64_t));
+    table->ids = (csi_id_t *)realloc(table->ids,
+                                     table->num_ids * sizeof(csi_id_t));
 }
 
 // Enlarge the given relationship table to support 'num_entries' new
@@ -225,31 +218,30 @@ EXTERN_C
 // before main().
 void __csirt_unit_init(const char * const name,
                        uint64_t num_func_entries,
-                       uint64_t *fed_func_id_base,
-                       fed_entry *fed_func_entries,
+                       csi_id_t *fed_func_id_base,
+                       source_loc_t *fed_func_entries,
                        uint64_t num_func_exit_entries,
-                       uint64_t *fed_func_exit_id_base,
-                       fed_entry *fed_func_exit_entries,
+                       csi_id_t *fed_func_exit_id_base,
+                       source_loc_t *fed_func_exit_entries,
                        uint64_t num_bb_entries,
-                       uint64_t *fed_bb_id_base,
-                       fed_entry *fed_bb_entries,
+                       csi_id_t *fed_bb_id_base,
+                       source_loc_t *fed_bb_entries,
                        uint64_t num_callsite_entries,
-                       uint64_t *fed_callsite_id_base,
-                       fed_entry *fed_callsite_entries,
+                       csi_id_t *fed_callsite_id_base,
+                       source_loc_t *fed_callsite_entries,
                        uint64_t num_load_entries,
-                       uint64_t *fed_load_id_base,
-                       fed_entry *fed_load_entries,
+                       csi_id_t *fed_load_id_base,
+                       source_loc_t *fed_load_entries,
                        uint64_t num_store_entries,
-                       uint64_t *fed_store_id_base,
-                       fed_entry *fed_store_entries,
+                       csi_id_t *fed_store_id_base,
+                       source_loc_t *fed_store_entries,
                        uint64_t num_bb_to_func_rel_entries,
-                       uint64_t num_func_to_bb_rel_entries,
+                       csi_id_t num_func_to_bb_rel_entries,
                        __csi_init_rel_tables_t rel_table_init,
                        __csi_init_callsite_to_functions callsite_to_func_init) {
     // TODO(ddoucet): threadsafety
     if (!csi_init_called) {
-        // TODO(ddoucet): what to call this with?
-        __csi_init("TODO: give the actual name here");
+        __csi_init();
         csi_init_called = true;
     }
 
@@ -292,63 +284,39 @@ void __csirt_unit_init(const char * const name,
 }
 
 // TODO(ddoucet): why does inlining these functions cause a crash?
-char *__csi_fed_func_get_filename(const uint64_t func_id) {
-    return get_fed_entry(FED_COLL_FUNCTIONS, func_id)->filename;
+source_loc_t __csi_fed_get_func(const csi_id_t func_id) {
+    return get_fed_entry(FED_COLL_FUNCTIONS, func_id);
 }
 
-int32_t __csi_fed_func_get_line_number(const uint64_t func_id) {
-    return get_fed_entry(FED_COLL_FUNCTIONS, func_id)->line_number;
+source_loc_t __csi_fed_get_func_exit(const csi_id_t func_exit_id) {
+    return get_fed_entry(FED_COLL_FUNCTION_EXIT, func_exit_id);
 }
 
-char *__csi_fed_func_exit_get_filename(const uint64_t func_exit_id) {
-    return get_fed_entry(FED_COLL_FUNCTION_EXIT, func_exit_id)->filename;
+source_loc_t __csi_fed_get_bb(const csi_id_t bb_id) {
+    return get_fed_entry(FED_COLL_BASICBLOCK, bb_id);
 }
 
-int32_t __csi_fed_func_exit_get_line_number(const uint64_t func_exit_id) {
-    return get_fed_entry(FED_COLL_FUNCTION_EXIT, func_exit_id)->line_number;
+source_loc_t __csi_fed_get_callsite(const csi_id_t callsite_id) {
+    return get_fed_entry(FED_COLL_CALLSITE, callsite_id);
 }
 
-char *__csi_fed_bb_get_filename(const uint64_t bb_id) {
-    return get_fed_entry(FED_COLL_BASICBLOCK, bb_id)->filename;
+source_loc_t __csi_fed_get_load(const csi_id_t load_id) {
+    return get_fed_entry(FED_COLL_LOAD, load_id);
 }
 
-int32_t __csi_fed_bb_get_line_number(const uint64_t bb_id) {
-    return get_fed_entry(FED_COLL_BASICBLOCK, bb_id)->line_number;
+source_loc_t __csi_fed_get_store(const csi_id_t store_id) {
+    return get_fed_entry(FED_COLL_STORE, store_id);
 }
 
-char *__csi_fed_callsite_get_filename(const uint64_t callsite_id) {
-    return get_fed_entry(FED_COLL_CALLSITE, callsite_id)->filename;
-}
-
-int32_t __csi_fed_callsite_get_line_number(const uint64_t callsite_id) {
-    return get_fed_entry(FED_COLL_CALLSITE, callsite_id)->line_number;
-}
-
-char *__csi_fed_load_get_filename(const uint64_t load_id) {
-    return get_fed_entry(FED_COLL_LOAD, load_id)->filename;
-}
-
-int32_t __csi_fed_load_get_line_number(const uint64_t load_id) {
-    return get_fed_entry(FED_COLL_LOAD, load_id)->line_number;
-}
-
-char *__csi_fed_store_get_filename(const uint64_t store_id) {
-    return get_fed_entry(FED_COLL_STORE, store_id)->filename;
-}
-
-int32_t __csi_fed_store_get_line_number(const uint64_t store_id) {
-    return get_fed_entry(FED_COLL_STORE, store_id)->line_number;
-}
-
-bool __csirt_callsite_target_unknown(uint64_t csi_id, uint64_t func_id) {
+bool __csirt_callsite_target_unknown(const csi_id_t callsite_id, const csi_id_t func_id) {
     return func_id == 0xffffffffffffffff;
 }
 
-uint64_t __csi_rel_bb_to_func(uint64_t bb_id) {
+csi_id_t __csi_rel_bb_to_func(const csi_id_t bb_id) {
     return rel_bb_to_func.ids[bb_id];
 }
 
-range_t __csi_rel_func_to_bb(uint64_t func_id) {
+range_t __csi_rel_func_to_bb(const csi_id_t func_id) {
     return rel_func_to_bb.ranges[func_id];
 }
 
