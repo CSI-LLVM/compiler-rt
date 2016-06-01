@@ -6,12 +6,30 @@
 #include "b.h"
 #include "lib.h"
 
-int c() {
+/*
+ * This file defines:
+ *      main(), c() and d()
+ * This file directly calls:
+ *      a(), b(), c(), lib() and sometimes d()
+ *
+ * Some of those functions call each other. So the entire call sequence is:
+ *
+ *      main -> a -> b -> foo
+ *                     -> lib
+ *      main -> b -> foo
+ *                -> lib
+ *      main -> c
+ *      main -> lib
+ *      main -> d (sometimes)
+ */
+
+static int c() {
     printf("In c.\n");
     return 3;
 }
 
-int d() {
+static int d() {
+    printf("In d.\n");
     return 4;
 }
 

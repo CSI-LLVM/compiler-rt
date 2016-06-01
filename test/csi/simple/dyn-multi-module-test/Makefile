@@ -1,4 +1,6 @@
 TOOLKIT = ../../toolkit
+CSIRT = ../../csirt
+CSIRT_OBJ = $(CSIRT)/csirt.o
 
 # Toolkit rules go before including 'common.mk' so that they are
 # preferentially matched.
@@ -9,12 +11,14 @@ $(TOOLKIT)/%.o: $(TOOLKIT)/%.cpp
 # e.g. 'make foo TOOL=print_tool'
 TOOL ?= null_tool
 TOOL_OBJ = $(patsubst %,$(TOOLKIT)/%.o,$(TOOL))
-CSIRT_OBJ = ../../csirt/csirt.o
 
 #COV_FLAGS = -fprofile-instr-generate -fcoverage-mapping
 COV_FLAGS=
 
 include ../../common.mk
+
+$(CSIRT_OBJ):
+	make -C $(CSIRT)
 
 OBJECTS=a.o b.o libtest.so
 
@@ -36,4 +40,6 @@ main.o: main.cpp
 	$(CXX) $(CXXFLAGS) -c $(EXTRA) -fcsi -emit-llvm $(COV_FLAGS) $^ -o $@
 
 clean:
-	rm -f main *.o *.so
+	-rm -f main *.o *.s *.ll *.bc *.so
+	make -C $(TOOLKIT) clean
+	make -C $(CSIRT) clean
