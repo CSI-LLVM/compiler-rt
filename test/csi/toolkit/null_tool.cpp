@@ -37,5 +37,6 @@ WEAK void __csi_bb_entry(const csi_id_t bb_id) {}
 WEAK void __csi_bb_exit(const csi_id_t bb_id) {}
 
 WEAK void __csi_before_callsite(csi_id_t callsite_id, csi_id_t func_id) {}
+WEAK void __csi_after_callsite(csi_id_t callsite_id, csi_id_t func_id) {}
 
 EXTERN_C_END
