@@ -105,6 +105,9 @@ static rel_range_table rel_func_to_bb;
 // Private function definitions
 // ------------------------------------------------------------------------
 
+// Initialize the FED collections list, indexed by a value of type
+// fed_collection_type. This is called once, by the first unit to
+// load.
 static void initialize_fed_collections() {
     fed_collections = (fed_collection *)malloc(NUM_FED_COLLS * sizeof(fed_collection));
     for (unsigned i = 0; i < NUM_FED_COLLS; i++) {
@@ -118,6 +121,8 @@ static void initialize_fed_collections() {
     fed_collections_initialized = true;
 }
 
+// Ensure that the FED collection of the given type has enough memory
+// allocated to add one more FED table to it.
 static void ensure_fed_collection_capacity(fed_collection_type fed_type) {
     bool need_realloc = false;
     if (!fed_collections_initialized) {
@@ -138,6 +143,10 @@ static void ensure_fed_collection_capacity(fed_collection_type fed_type) {
     }
 }
 
+// Add a new FED table to the FED collection of the given type. The
+// new FED table is passed as a pointer to its list of entries
+// 'fed_entries'. The number of entries in 'fed_entries' is
+// 'num_entries'.
 static inline void add_fed_table(fed_collection_type fed_type, uint64_t num_entries, fed_entry *fed_entries) {
     ensure_fed_collection_capacity(fed_type);
     fed_collection *coll = &fed_collections[fed_type];
@@ -148,12 +157,15 @@ static inline void add_fed_table(fed_collection_type fed_type, uint64_t num_entr
     coll->tables[coll->num_fed_tables++] = new_table;
 }
 
+// TODO document
 static inline void update_ids(fed_collection_type fed_type, uint64_t num_entries, uint64_t *fed_id_base) {
     fed_collection *coll = &fed_collections[fed_type];
     *fed_id_base = coll->total_num_entries;
     coll->total_num_entries += num_entries;
 }
 
+// Return the FED entry of the given type, corresponding to the given
+// CSI ID.
 static inline fed_entry *get_fed_entry(fed_collection_type fed_type, uint64_t csi_id) {
     // TODO(ddoucet): threadsafety
     uint64_t sum = 0;
@@ -169,18 +181,24 @@ static inline fed_entry *get_fed_entry(fed_collection_type fed_type, uint64_t cs
     exit(-1);
 }
 
+// Enlarge the given relationship table to support 'num_entries' new
+// entries.
 static inline void realloc_rel_table(rel_table *table, uint64_t num_entries) {
     table->num_ids += num_entries;
     table->ids = (uint64_t *)realloc(table->ids,
                                      table->num_ids * sizeof(uint64_t));
 }
 
+// Enlarge the given relationship table to support 'num_entries' new
+// entries.
 static inline void realloc_rel_range_table(rel_range_table *table, uint64_t num_entries) {
     table->num_ranges += num_entries;
     table->ranges = (range_t *)realloc(table->ranges,
                                        table->num_ranges * sizeof(range_t));
 }
 
+// Enlarge all relationship tables to support a number of new entries
+// that will be added to them.
 static inline void realloc_rel_tables(uint64_t num_bb_to_func_rel_entries,
                                       uint64_t num_func_to_bb_rel_entries) {
     realloc_rel_table(&rel_bb_to_func, num_bb_to_func_rel_entries);
