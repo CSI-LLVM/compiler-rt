@@ -1,5 +1,4 @@
 #include "csi.h"
-#include "../csirt/csirt.h"
 #include <stdio.h>
 
 static inline void print_call(const char *const msg,

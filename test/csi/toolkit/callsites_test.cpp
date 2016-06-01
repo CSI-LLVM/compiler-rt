@@ -1,5 +1,4 @@
 #include "csi.h"
-#include "../csirt/csirt.h"
 #include <stdio.h>
 
 void __csi_before_callsite(uint64_t csi_id, uint64_t func_id) {

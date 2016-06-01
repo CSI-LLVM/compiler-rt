@@ -1,5 +1,4 @@
 #include "csi.h"
-#include "../csirt/csirt.h"
 #include <stdio.h>
 #include <stdlib.h>
 
