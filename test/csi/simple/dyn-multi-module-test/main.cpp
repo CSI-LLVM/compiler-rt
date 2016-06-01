@@ -16,11 +16,11 @@
  *
  *      main -> a -> b -> foo
  *                     -> lib
- *      main -> b -> foo
+ *           -> b -> foo
  *                -> lib
- *      main -> c
- *      main -> lib
- *      main -> d (sometimes)
+ *           -> c
+ *           -> lib
+ *           -> d (sometimes)
  */
 
 static int c() {
