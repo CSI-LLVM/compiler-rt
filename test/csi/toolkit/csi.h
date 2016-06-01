@@ -17,15 +17,22 @@
 // API function signatures
 EXTERN_C
 
-typedef uint64_t csi_id_t;
+/**
+ * Unless a type requires bitwise operations (e.g., property lists), we use
+ * signed integers. We don't need the extra bit of data, and using unsigned
+ * integers can lead to subtle bugs. See
+ * http://www.soundsoftware.ac.uk/c-pitfall-unsigned
+ */
+
+typedef int64_t csi_id_t;
 
 typedef struct {
-  uint64_t num_bb;
-  uint64_t num_callsite;
-  uint64_t num_func;
-  uint64_t num_func_exit;
-  uint64_t num_load;
-  uint64_t num_store;
+  int64_t num_bb;
+  int64_t num_callsite;
+  int64_t num_func;
+  int64_t num_func_exit;
+  int64_t num_load;
+  int64_t num_store;
 } instrumentation_counts_t;
 
 typedef struct {
@@ -40,22 +47,22 @@ WEAK void __csi_unit_init(const char * const file_name,
 
 WEAK void __csi_before_load(const csi_id_t load_id,
                             const void *addr,
-                            const uint32_t num_bytes,
+                            const int32_t num_bytes,
                             const uint64_t prop);
 
 WEAK void __csi_after_load(const csi_id_t load_id,
                            const void *addr,
-                           const uint32_t num_bytes,
+                           const int32_t num_bytes,
                            const uint64_t prop);
 
 WEAK void __csi_before_store(const csi_id_t store_id,
                              const void *addr,
-                             const uint32_t num_bytes,
+                             const int32_t num_bytes,
                              const uint64_t prop);
 
 WEAK void __csi_after_store(const csi_id_t store_id,
                             const void *addr,
-                            const uint32_t num_bytes,
+                            const int32_t num_bytes,
                             const uint64_t prop);
 
 WEAK void __csi_func_entry(const csi_id_t func_id);
@@ -71,6 +78,7 @@ WEAK void __csi_before_callsite(csi_id_t callsite_id, csi_id_t func_id);
 WEAK void __csi_after_callsite(csi_id_t callsite_id, csi_id_t func_id);
 
 typedef struct {
+    // TODO(ddoucet): Why is this 32 bits?
     int32_t line_number;
     char *filename;
 } source_loc_t;
@@ -83,7 +91,7 @@ source_loc_t __csi_fed_get_callsite(const csi_id_t callsite_id);
 source_loc_t __csi_fed_get_load(const csi_id_t load_id);
 source_loc_t __csi_fed_get_store(const csi_id_t store_id);
 
-bool __csirt_callsite_target_unknown(uint64_t csi_id, uint64_t func_id);
+bool __csirt_callsite_target_unknown(const csi_id_t csi_id, const csi_id_t func_id);
 
 // Relation table accessors.
 csi_id_t __csi_rel_bb_to_func(const csi_id_t bb_id);

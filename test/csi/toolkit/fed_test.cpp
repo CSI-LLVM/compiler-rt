@@ -13,35 +13,35 @@ void __csi_init() {
     printf("__csi_init\n");
 }
 
-void __csi_unit_init(const char *const file_name,
-                     const uint64_t num_inst) {
-    printf("__csi_unit_init: %s, %lu inst\n", file_name, num_inst);
+void __csi_unit_init(const char * const file_name,
+                     const instrumentation_counts_t counts) {
+    fprintf(stderr, "Initialize unit id %s, %lu basic blocks, %lu callsites, %lu functions, %lu function exits, %lu loads, %lu stores.\n", file_name, counts.num_bb, counts.num_callsite, counts.num_func, counts.num_func_exit, counts.num_load, counts.num_store);
 }
 
 void __csi_before_load(const csi_id_t load_id,
                        const void *addr,
-                       const uint32_t num_bytes,
+                       const int32_t num_bytes,
                        const uint64_t prop) {
     print_call("__csi_before_load", __csi_fed_get_load(load_id));
 }
 
 void __csi_after_load(const csi_id_t load_id,
                       const void *addr,
-                      const uint32_t num_bytes,
+                      const int32_t num_bytes,
                       const uint64_t prop) {
     print_call("__csi_after_load", __csi_fed_get_load(load_id));
 }
 
 void __csi_before_store(const csi_id_t store_id,
                         const void *addr,
-                        const uint32_t num_bytes,
+                        const int32_t num_bytes,
                         const uint64_t prop) {
     print_call("__csi_before_store", __csi_fed_get_store(store_id));
 }
 
 void __csi_after_store(const csi_id_t store_id,
                        const void *addr,
-                       const uint32_t num_bytes,
+                       const int32_t num_bytes,
                        const uint64_t prop) {
     print_call("__csi_after_store", __csi_fed_get_store(store_id));
 }
