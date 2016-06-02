@@ -40,9 +40,9 @@ WEAK void __csi_init();
 WEAK void __csi_unit_init(const char * const file_name,
                           const instrumentation_counts_t counts);
 
-WEAK void __csi_before_callsite(const csi_id_t callsite_id, const csi_id_t func_id);
+WEAK void __csi_before_call(const csi_id_t callsite_id, const csi_id_t func_id);
 
-WEAK void __csi_after_callsite(const csi_id_t callsite_id, const csi_id_t func_id);
+WEAK void __csi_after_call(const csi_id_t callsite_id, const csi_id_t func_id);
 
 WEAK void __csi_func_entry(const csi_id_t func_id);
 
