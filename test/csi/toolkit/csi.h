@@ -35,15 +35,23 @@ typedef struct {
   int64_t num_store;
 } instrumentation_counts_t;
 
-typedef struct {
-  csi_id_t first_id;
-  csi_id_t last_id;
-} range_t;
-
 WEAK void __csi_init();
 
 WEAK void __csi_unit_init(const char * const file_name,
                           const instrumentation_counts_t counts);
+
+WEAK void __csi_before_callsite(const csi_id_t callsite_id, const csi_id_t func_id);
+
+WEAK void __csi_after_callsite(const csi_id_t callsite_id, const csi_id_t func_id);
+
+WEAK void __csi_func_entry(const csi_id_t func_id);
+
+WEAK void __csi_func_exit(const csi_id_t func_exit_id,
+                          const csi_id_t func_id);
+
+WEAK void __csi_bb_entry(const csi_id_t bb_id);
+
+WEAK void __csi_bb_exit(const csi_id_t bb_id);
 
 WEAK void __csi_before_load(const csi_id_t load_id,
                             const void *addr,
@@ -65,18 +73,6 @@ WEAK void __csi_after_store(const csi_id_t store_id,
                             const int32_t num_bytes,
                             const uint64_t prop);
 
-WEAK void __csi_func_entry(const csi_id_t func_id);
-
-WEAK void __csi_func_exit(const csi_id_t func_exit_id,
-                          const csi_id_t func_id);
-
-WEAK void __csi_bb_entry(const csi_id_t bb_id);
-
-WEAK void __csi_bb_exit(const csi_id_t bb_id);
-
-WEAK void __csi_before_callsite(const csi_id_t callsite_id, const csi_id_t func_id);
-WEAK void __csi_after_callsite(const csi_id_t callsite_id, const csi_id_t func_id);
-
 typedef struct {
     // TODO(ddoucet): Why is this 32 bits?
     int32_t line_number;
@@ -94,6 +90,12 @@ source_loc_t __csi_fed_get_store(const csi_id_t store_id);
 bool __csirt_is_callsite_target_unknown(const csi_id_t csi_id, const csi_id_t func_id);
 
 // Relation table accessors.
+
+typedef struct {
+  csi_id_t first_id;
+  csi_id_t last_id;
+} range_t;
+
 csi_id_t __csi_rel_bb_to_func(const csi_id_t bb_id);
 range_t __csi_rel_func_to_bb(const csi_id_t func_id);
 
