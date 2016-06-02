@@ -37,7 +37,7 @@ typedef enum {
     FED_COLL_CALLSITE,
     FED_COLL_LOAD,
     FED_COLL_STORE,
-    NUM_FED_COLLS // Must be last
+    NUM_FED_TYPES // Must be last
 } fed_type_t;
 
 // ------------------------------------------------------------------------
@@ -108,8 +108,8 @@ static rel_range_table_t rel_func_to_bb;
 // fed_type_t. This is called once, by the first unit to
 // load.
 static void initialize_fed_collections() {
-    fed_collections = (fed_collection_t *)malloc(NUM_FED_COLLS * sizeof(fed_collection_t));
-    for (unsigned i = 0; i < NUM_FED_COLLS; i++) {
+    fed_collections = (fed_collection_t *)malloc(NUM_FED_TYPES * sizeof(fed_collection_t));
+    for (unsigned i = 0; i < NUM_FED_TYPES; i++) {
         fed_collection_t coll;
         coll.total_num_entries = 0;
         coll.num_fed_tables = 0;
@@ -146,7 +146,7 @@ static void ensure_fed_collection_capacity(fed_type_t fed_type) {
 // new FED table is passed as a pointer to its list of entries
 // 'fed_entries'. The number of entries in 'fed_entries' is
 // 'num_entries'.
-static inline void add_fed_table(fed_type_t fed_type, int64_t num_entries, source_loc_t * const fed_entries) {
+static inline void add_fed_table(fed_type_t fed_type, int64_t num_entries, source_loc_t const * fed_entries) {
     ensure_fed_collection_capacity(fed_type);
     fed_collection_t *coll = &fed_collections[fed_type];
 
@@ -214,27 +214,24 @@ static inline void realloc_rel_tables(int64_t num_bb_to_func_rel_entries,
 
 EXTERN_C
 
+typedef struct {
+    int64_t num_entries;
+    csi_id_t *id_base;
+    source_loc_t const * entries;
+} unit_fed_table_t;
+
+static inline instrumentation_counts_t compute_inst_counts(unit_fed_table_t *unit_fed_tables) {
+    instrumentation_counts_t counts;
+    int64_t *base = (int64_t *)&counts;
+    for (unsigned i = 0; i < NUM_FED_TYPES; i++)
+        *(base + i) = unit_fed_tables[i].num_entries;
+    return counts;
+}
+
 // A call to this is inserted by the CSI compiler pass, and occurs
 // before main().
 void __csirt_unit_init(const char * const name,
-                       int64_t num_func_entries,
-                       csi_id_t *fed_func_id_base,
-                       source_loc_t * const fed_func_entries,
-                       int64_t num_func_exit_entries,
-                       csi_id_t *fed_func_exit_id_base,
-                       source_loc_t * const fed_func_exit_entries,
-                       int64_t num_bb_entries,
-                       csi_id_t *fed_bb_id_base,
-                       source_loc_t * const fed_bb_entries,
-                       int64_t num_callsite_entries,
-                       csi_id_t *fed_callsite_id_base,
-                       source_loc_t * const fed_callsite_entries,
-                       int64_t num_load_entries,
-                       csi_id_t *fed_load_id_base,
-                       source_loc_t * const fed_load_entries,
-                       int64_t num_store_entries,
-                       csi_id_t *fed_store_id_base,
-                       source_loc_t * const fed_store_entries,
+                       unit_fed_table_t *unit_fed_tables,
                        int64_t num_bb_to_func_rel_entries,
                        int64_t num_func_to_bb_rel_entries,
                        __csi_init_rel_tables_func_t rel_table_init,
@@ -246,23 +243,10 @@ void __csirt_unit_init(const char * const name,
     }
 
     // Add all FED tables from the new unit
-    add_fed_table(FED_COLL_FUNCTIONS, num_func_entries, fed_func_entries);
-    update_ids(FED_COLL_FUNCTIONS, num_func_entries, fed_func_id_base);
-
-    add_fed_table(FED_COLL_FUNCTION_EXIT, num_func_exit_entries, fed_func_exit_entries);
-    update_ids(FED_COLL_FUNCTION_EXIT, num_func_exit_entries, fed_func_exit_id_base);
-
-    add_fed_table(FED_COLL_BASICBLOCK, num_bb_entries, fed_bb_entries);
-    update_ids(FED_COLL_BASICBLOCK, num_bb_entries, fed_bb_id_base);
-
-    add_fed_table(FED_COLL_CALLSITE, num_callsite_entries, fed_callsite_entries);
-    update_ids(FED_COLL_CALLSITE, num_callsite_entries, fed_callsite_id_base);
-
-    add_fed_table(FED_COLL_LOAD, num_load_entries, fed_load_entries);
-    update_ids(FED_COLL_LOAD, num_load_entries, fed_load_id_base);
-
-    add_fed_table(FED_COLL_STORE, num_store_entries, fed_store_entries);
-    update_ids(FED_COLL_STORE, num_store_entries, fed_store_id_base);
+    for (unsigned i = 0; i < NUM_FED_TYPES; i++) {
+        add_fed_table(i, unit_fed_tables[i].num_entries, unit_fed_tables[i].entries);
+        update_ids(i, unit_fed_tables[i].num_entries, unit_fed_tables[i].id_base);
+    }
 
     // Add all relationship tables from the new unit
     realloc_rel_tables(num_bb_to_func_rel_entries, num_func_to_bb_rel_entries);
@@ -273,14 +257,7 @@ void __csirt_unit_init(const char * const name,
     callsite_to_func_init();
 
     // Call into the tool implementation.
-    instrumentation_counts_t counts;
-    counts.num_bb = num_bb_entries;
-    counts.num_callsite = num_callsite_entries;
-    counts.num_func = num_func_entries;
-    counts.num_func_exit = num_func_exit_entries;
-    counts.num_load = num_load_entries;
-    counts.num_store = num_store_entries;
-    __csi_unit_init(name, counts);
+    __csi_unit_init(name, compute_inst_counts(unit_fed_tables));
 }
 
 source_loc_t const * __csi_fed_get_func(const csi_id_t func_id) {
