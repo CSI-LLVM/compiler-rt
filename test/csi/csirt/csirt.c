@@ -12,7 +12,7 @@
 // ID. Each FED table has its own private ID space.
 typedef struct {
     int64_t num_entries;
-    source_loc_t *entries;
+    source_loc_t const * entries;
 } fed_table_t;
 
 // A FED "collection" is a list of FED tables of a particular type
@@ -146,7 +146,7 @@ static void ensure_fed_collection_capacity(fed_type_t fed_type) {
 // new FED table is passed as a pointer to its list of entries
 // 'fed_entries'. The number of entries in 'fed_entries' is
 // 'num_entries'.
-static inline void add_fed_table(fed_type_t fed_type, int64_t num_entries, source_loc_t *fed_entries) {
+static inline void add_fed_table(fed_type_t fed_type, int64_t num_entries, source_loc_t * const fed_entries) {
     ensure_fed_collection_capacity(fed_type);
     fed_collection_t *coll = &fed_collections[fed_type];
 
@@ -170,18 +170,18 @@ static inline void update_ids(fed_type_t fed_type, int64_t num_entries, csi_id_t
 
 // Return the FED entry of the given type, corresponding to the given
 // CSI ID.
-static inline source_loc_t get_fed_entry(fed_type_t fed_type, const csi_id_t csi_id) {
+static inline source_loc_t const * get_fed_entry(fed_type_t fed_type, const csi_id_t csi_id) {
     // TODO(ddoucet): threadsafety
     csi_id_t sum = 0;
     fed_collection_t *coll = &fed_collections[fed_type];
     for (csi_id_t i = 0; i < coll->num_fed_tables; i++) {
         fed_table_t *table = &coll->tables[i];
         if (csi_id < sum + table->num_entries)
-            return table->entries[csi_id - sum];
+            return &table->entries[csi_id - sum];
         sum += table->num_entries;
     }
 
-    return (source_loc_t){-1, ""};
+    return NULL;
 }
 
 // Enlarge the given relationship table to support 'num_entries' new
@@ -219,22 +219,22 @@ EXTERN_C
 void __csirt_unit_init(const char * const name,
                        int64_t num_func_entries,
                        csi_id_t *fed_func_id_base,
-                       source_loc_t *fed_func_entries,
+                       source_loc_t * const fed_func_entries,
                        int64_t num_func_exit_entries,
                        csi_id_t *fed_func_exit_id_base,
-                       source_loc_t *fed_func_exit_entries,
+                       source_loc_t * const fed_func_exit_entries,
                        int64_t num_bb_entries,
                        csi_id_t *fed_bb_id_base,
-                       source_loc_t *fed_bb_entries,
+                       source_loc_t * const fed_bb_entries,
                        int64_t num_callsite_entries,
                        csi_id_t *fed_callsite_id_base,
-                       source_loc_t *fed_callsite_entries,
+                       source_loc_t * const fed_callsite_entries,
                        int64_t num_load_entries,
                        csi_id_t *fed_load_id_base,
-                       source_loc_t *fed_load_entries,
+                       source_loc_t * const fed_load_entries,
                        int64_t num_store_entries,
                        csi_id_t *fed_store_id_base,
-                       source_loc_t *fed_store_entries,
+                       source_loc_t * const fed_store_entries,
                        int64_t num_bb_to_func_rel_entries,
                        int64_t num_func_to_bb_rel_entries,
                        __csi_init_rel_tables_func_t rel_table_init,
@@ -283,28 +283,27 @@ void __csirt_unit_init(const char * const name,
     __csi_unit_init(name, counts);
 }
 
-// TODO(ddoucet): why does inlining these functions cause a crash?
-source_loc_t __csi_fed_get_func(const csi_id_t func_id) {
+source_loc_t const * __csi_fed_get_func(const csi_id_t func_id) {
     return get_fed_entry(FED_COLL_FUNCTIONS, func_id);
 }
 
-source_loc_t __csi_fed_get_func_exit(const csi_id_t func_exit_id) {
+source_loc_t const * __csi_fed_get_func_exit(const csi_id_t func_exit_id) {
     return get_fed_entry(FED_COLL_FUNCTION_EXIT, func_exit_id);
 }
 
-source_loc_t __csi_fed_get_bb(const csi_id_t bb_id) {
+source_loc_t const * __csi_fed_get_bb(const csi_id_t bb_id) {
     return get_fed_entry(FED_COLL_BASICBLOCK, bb_id);
 }
 
-source_loc_t __csi_fed_get_callsite(const csi_id_t callsite_id) {
+source_loc_t const * __csi_fed_get_callsite(const csi_id_t callsite_id) {
     return get_fed_entry(FED_COLL_CALLSITE, callsite_id);
 }
 
-source_loc_t __csi_fed_get_load(const csi_id_t load_id) {
+source_loc_t const * __csi_fed_get_load(const csi_id_t load_id) {
     return get_fed_entry(FED_COLL_LOAD, load_id);
 }
 
-source_loc_t __csi_fed_get_store(const csi_id_t store_id) {
+source_loc_t const * __csi_fed_get_store(const csi_id_t store_id) {
     return get_fed_entry(FED_COLL_STORE, store_id);
 }
 

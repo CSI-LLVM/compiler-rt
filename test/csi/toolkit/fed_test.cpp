@@ -2,10 +2,10 @@
 #include <stdio.h>
 
 static inline void print_call(const char *const msg,
-                              source_loc_t source_loc) {
+                              source_loc_t const * source_loc) {
     printf("%s:%d -- %s\n",
-           source_loc.filename,
-           source_loc.line_number,
+           source_loc->filename,
+           source_loc->line_number,
            msg);
 }
 
@@ -68,8 +68,8 @@ void __csi_before_call(const csi_id_t callsite_id, const csi_id_t func_id) {
     if (__csirt_is_callsite_target_unknown(callsite_id, func_id)) {
         printf("  (unknown target)\n");
     } else {
-        source_loc_t func = __csi_fed_get_func(func_id);
-        printf("  target: %s:%d\n", func.filename, func.line_number);
+        source_loc_t const * func = __csi_fed_get_func(func_id);
+        printf("  target: %s:%d\n", func->filename, func->line_number);
     }
 }
 
@@ -78,7 +78,7 @@ void __csi_after_call(const csi_id_t callsite_id, const csi_id_t func_id) {
     if (__csirt_is_callsite_target_unknown(callsite_id, func_id)) {
         printf("  (unknown target)\n");
     } else {
-        source_loc_t func = __csi_fed_get_func(func_id);
-        printf("  target: %s:%d\n", func.filename, func.line_number);
+        source_loc_t const * func = __csi_fed_get_func(func_id);
+        printf("  target: %s:%d\n", func->filename, func->line_number);
     }
 }

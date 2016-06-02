@@ -80,12 +80,12 @@ typedef struct {
 } source_loc_t;
 
 // Front-end data (FED) table accessors.
-source_loc_t __csi_fed_get_func(const csi_id_t func_id);
-source_loc_t __csi_fed_get_func_exit(const csi_id_t func_exit_id);
-source_loc_t __csi_fed_get_bb(const csi_id_t bb_id);
-source_loc_t __csi_fed_get_callsite(const csi_id_t callsite_id);
-source_loc_t __csi_fed_get_load(const csi_id_t load_id);
-source_loc_t __csi_fed_get_store(const csi_id_t store_id);
+source_loc_t const * __csi_fed_get_func(const csi_id_t func_id);
+source_loc_t const * __csi_fed_get_func_exit(const csi_id_t func_exit_id);
+source_loc_t const * __csi_fed_get_bb(const csi_id_t bb_id);
+source_loc_t const * __csi_fed_get_callsite(const csi_id_t callsite_id);
+source_loc_t const * __csi_fed_get_load(const csi_id_t load_id);
+source_loc_t const * __csi_fed_get_store(const csi_id_t store_id);
 
 bool __csirt_is_callsite_target_unknown(const csi_id_t csi_id, const csi_id_t func_id);
 
