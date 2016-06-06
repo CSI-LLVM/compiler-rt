@@ -1,5 +1,4 @@
 #include "csi.h"
-#include "../csirt/csirt.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -99,7 +98,7 @@ void __csi_before_callsite(uint64_t csi_id, uint64_t func_id) {
     fprintf(stderr, "Before callsite %lu (%s:%d) to ", csi_id,
             __csi_fed_callsite_get_filename(csi_id),
             __csi_fed_callsite_get_line_number(csi_id));
-    if (__csirt_callsite_target_unknown(csi_id, func_id)) {
+    if (__csirt_is_callsite_target_unknown(csi_id, func_id)) {
         fprintf(stderr, "unknown function.\n");
     } else {
         fprintf(stderr, "%lu (%s:%d)\n", func_id,
