@@ -2,5 +2,6 @@
 #define __LIB_H__
 
 int lib();
+int lib2();
 
 #endif
