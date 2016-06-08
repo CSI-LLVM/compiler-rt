@@ -1,30 +1,35 @@
-#include "csi.h"
-#include <stdio.h>
-#include <stdlib.h>
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
 #include <set>
+#include <stack>
+#include "csi.h"
 
 namespace {
 
-std::set<csi_id_t> *function_ids = nullptr;
+std::set<csi_id_t> *called_functions = nullptr;
+std::stack<csi_id_t> *callstack = nullptr;
 csi_id_t total_num_functions = 0;
 int indent_level = 0;
 
 void report() {
     fprintf(stderr, "\n============= Demo tool report =============\n");
-    fprintf(stderr, "Executed %lu/%ld functions.\n", function_ids->size(), total_num_functions);
+    fprintf(stderr, "Executed %lu/%ld functions.\n", called_functions->size(), total_num_functions);
     for (csi_id_t id = 0; id < total_num_functions; id++) {
-        if (function_ids->count(id) == 0) {
+        if (called_functions->count(id) == 0) {
             fprintf(stderr, "  Function ID %ld at %s:%d was not executed.\n", id,
                     __csi_fed_get_func(id)->filename,
                     __csi_fed_get_func(id)->line_number);
         }
     }
     fprintf(stderr, "\n");
-    delete function_ids;
+    delete called_functions;
+    delete callstack;
 }
 
 void init() {
-    function_ids = new std::set<csi_id_t>();
+    called_functions = new std::set<csi_id_t>();
+    callstack = new std::stack<csi_id_t>();
     atexit(report);
 }
 
@@ -101,7 +106,8 @@ void __csi_func_entry(const csi_id_t func_id) {
             __csi_fed_get_func(func_id)->filename,
             __csi_fed_get_func(func_id)->line_number);
     indent_level++;
-    function_ids->insert(func_id);
+    called_functions->insert(func_id);
+    if (!callstack->empty()) assert(callstack->top() == func_id);
 }
 
 void __csi_func_exit(const csi_id_t func_exit_id,
@@ -112,6 +118,7 @@ void __csi_func_exit(const csi_id_t func_exit_id,
             func_id,
             __csi_fed_get_func_exit(func_exit_id)->filename,
             __csi_fed_get_func_exit(func_exit_id)->line_number);
+    if (!callstack->empty()) assert(callstack->top() == func_id);
 }
 
 void __csi_bb_entry(const csi_id_t bb_id) {
@@ -136,6 +143,7 @@ void __csi_before_call(const csi_id_t callsite_id, const csi_id_t func_id) {
     if (__csirt_is_callsite_target_unknown(callsite_id, func_id)) {
         fprintf(stderr, "<unknown> ");
     } else {
+        callstack->push(func_id);
         fprintf(stderr, "%ld (%s:%d) ", func_id,
                 __csi_fed_get_func(func_id)->filename,
                 __csi_fed_get_func(func_id)->line_number);
@@ -151,6 +159,7 @@ void __csi_after_call(const csi_id_t callsite_id, const csi_id_t func_id) {
     if (__csirt_is_callsite_target_unknown(callsite_id, func_id)) {
         fprintf(stderr, "<unknown> ");
     } else {
+        callstack->pop();
         fprintf(stderr, "%ld ", func_id);
     }
     fprintf(stderr, "\n");
