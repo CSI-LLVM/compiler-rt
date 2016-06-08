@@ -1,35 +1,38 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
-#include <set>
-#include <stack>
 #include "csi.h"
+#include "stack.h"
+#include "vector.h"
 
 namespace {
 
-std::set<csi_id_t> *called_functions = nullptr;
-std::stack<csi_id_t> *callstack = nullptr;
+Vector<bool> *called_functions = nullptr;
+Stack<csi_id_t> *callstack = nullptr;
 csi_id_t total_num_functions = 0;
 int indent_level = 0;
 
 void report() {
     fprintf(stderr, "\n============= Demo tool report =============\n");
-    fprintf(stderr, "Executed %lu/%ld functions.\n", called_functions->size(), total_num_functions);
+    assert(called_functions->size() == total_num_functions);
+    int64_t num_executed = 0;
     for (csi_id_t id = 0; id < total_num_functions; id++) {
-        if (called_functions->count(id) == 0) {
-            fprintf(stderr, "  Function ID %ld at %s:%d was not executed.\n", id,
+        if (called_functions->at(id) == false) {
+            fprintf(stderr, "Function ID %ld at %s:%d was not executed.\n", id,
                     __csi_fed_get_func(id)->filename,
                     __csi_fed_get_func(id)->line_number);
+        } else {
+            num_executed++;
         }
     }
-    fprintf(stderr, "\n");
+    fprintf(stderr, "\nSummary: %ld/%lu functions were executed.\n", num_executed, total_num_functions);
     delete called_functions;
     delete callstack;
 }
 
 void init() {
-    called_functions = new std::set<csi_id_t>();
-    callstack = new std::stack<csi_id_t>();
+    called_functions = new Vector<bool>();
+    callstack = new Stack<csi_id_t>();
     atexit(report);
 }
 
@@ -53,6 +56,7 @@ void __csi_unit_init(const char * const file_name,
                      const instrumentation_counts_t counts) {
     fprintf(stderr, "Initialize unit '%s': %lu basic blocks, %lu callsites, %lu functions, %lu function exits, %lu loads, %lu stores.\n", file_name, counts.num_bb, counts.num_callsite, counts.num_func, counts.num_func_exit, counts.num_load, counts.num_store);
     total_num_functions += counts.num_func;
+    called_functions->expand(total_num_functions, false);
 }
 
 void __csi_before_load(const csi_id_t load_id,
@@ -106,7 +110,7 @@ void __csi_func_entry(const csi_id_t func_id) {
             __csi_fed_get_func(func_id)->filename,
             __csi_fed_get_func(func_id)->line_number);
     indent_level++;
-    called_functions->insert(func_id);
+    called_functions->at(func_id) = true;
     if (!callstack->empty()) assert(callstack->top() == func_id);
 }
 
