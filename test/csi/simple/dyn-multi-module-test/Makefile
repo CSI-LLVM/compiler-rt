@@ -12,9 +12,6 @@ $(TOOLKIT)/%.o: $(TOOLKIT)/%.cpp
 TOOL ?= null_tool
 TOOL_OBJ = $(patsubst %,$(TOOLKIT)/%.o,$(TOOL))
 
-#COV_FLAGS = -fprofile-instr-generate -fcoverage-mapping
-COV_FLAGS=
-
 include ../../common.mk
 
 $(CSIRT_OBJ):
@@ -24,20 +21,20 @@ OBJECTS=a.o b.o libtest.so
 
 default: main
 
-main: main.o $(CSIRT_OBJ) $(OBJECTS) $(TOOL_OBJ)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -fcsi -flto $(COV_FLAGS) $^ -o $@ -L. -ltest
-
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $(EXTRA) $(COV_FLAGS) -fcsi -emit-llvm $^ -o $@
+	$(CXX) $(CXXFLAGS) -c $(EXTRA) -fcsi -emit-llvm $^ -o $@
+
+main: main.o $(CSIRT_OBJ) $(OBJECTS) $(TOOL_OBJ)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -flto $^ -o $@ -L. -ltest
 
 lib.o: lib.cpp
-	$(CXX) $(CXXFLAGS) -c $(EXTRA) -fPIC $(COV_FLAGS) -fcsi -emit-llvm $^ -o $@
+	$(CXX) $(CXXFLAGS) -c $(EXTRA) -fPIC -fcsi -emit-llvm $^ -o $@
 
 libtest.so: lib.o $(TOOL_OBJ)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(EXTRA) -Wl,-soname,libtest.so -fcsi -flto -shared -o $@ $^
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(EXTRA) -Wl,-soname,libtest.so -flto -shared -o $@ $^
 
 main.o: main.cpp
-	$(CXX) $(CXXFLAGS) -c $(EXTRA) -fcsi -emit-llvm $(COV_FLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) -c $(EXTRA) -fcsi -emit-llvm $^ -o $@
 
 clean:
 	-rm -f main *.o *.s *.ll *.bc *.so
