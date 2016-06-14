@@ -27,22 +27,18 @@ EXTERN_C
 typedef int64_t csi_id_t;
 
 typedef struct {
-  int64_t num_bb;
-  int64_t num_callsite;
-  int64_t num_func;
-  int64_t num_func_exit;
-  int64_t num_load;
-  int64_t num_store;
+  csi_id_t num_bb;
+  csi_id_t num_callsite;
+  csi_id_t num_func;
+  csi_id_t num_func_exit;
+  csi_id_t num_load;
+  csi_id_t num_store;
 } instrumentation_counts_t;
 
 WEAK void __csi_init();
 
 WEAK void __csi_unit_init(const char * const file_name,
                           const instrumentation_counts_t counts);
-
-WEAK void __csi_before_call(const csi_id_t callsite_id, const csi_id_t func_id);
-
-WEAK void __csi_after_call(const csi_id_t callsite_id, const csi_id_t func_id);
 
 WEAK void __csi_func_entry(const csi_id_t func_id);
 
@@ -52,6 +48,10 @@ WEAK void __csi_func_exit(const csi_id_t func_exit_id,
 WEAK void __csi_bb_entry(const csi_id_t bb_id);
 
 WEAK void __csi_bb_exit(const csi_id_t bb_id);
+
+WEAK void __csi_before_call(const csi_id_t call_id, const csi_id_t func_id);
+
+WEAK void __csi_after_call(const csi_id_t call_id, const csi_id_t func_id);
 
 WEAK void __csi_before_load(const csi_id_t load_id,
                             const void *addr,
@@ -80,12 +80,12 @@ typedef struct {
 } source_loc_t;
 
 // Front-end data (FED) table accessors.
-source_loc_t const * __csi_fed_get_func(const csi_id_t func_id);
-source_loc_t const * __csi_fed_get_func_exit(const csi_id_t func_exit_id);
-source_loc_t const * __csi_fed_get_bb(const csi_id_t bb_id);
-source_loc_t const * __csi_fed_get_callsite(const csi_id_t callsite_id);
-source_loc_t const * __csi_fed_get_load(const csi_id_t load_id);
-source_loc_t const * __csi_fed_get_store(const csi_id_t store_id);
+source_loc_t const * __csi_get_func_source_loc(const csi_id_t func_id);
+source_loc_t const * __csi_get_func_exit_source_loc(const csi_id_t func_exit_id);
+source_loc_t const * __csi_get_bb_source_loc(const csi_id_t bb_id);
+source_loc_t const * __csi_get_callsite_source_loc(const csi_id_t call_id);
+source_loc_t const * __csi_get_load_source_loc(const csi_id_t load_id);
+source_loc_t const * __csi_get_store_source_loc(const csi_id_t store_id);
 
 bool __csirt_is_callsite_target_unknown(const csi_id_t csi_id, const csi_id_t func_id);
 

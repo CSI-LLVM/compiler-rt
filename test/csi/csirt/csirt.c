@@ -195,27 +195,27 @@ void __csirt_unit_init(const char * const name,
     __csi_unit_init(name, compute_inst_counts(unit_fed_tables));
 }
 
-source_loc_t const * __csi_fed_get_func(const csi_id_t func_id) {
+source_loc_t const * __csi_get_func_source_loc(const csi_id_t func_id) {
     return get_fed_entry(FED_COLL_FUNCTIONS, func_id);
 }
 
-source_loc_t const * __csi_fed_get_func_exit(const csi_id_t func_exit_id) {
+source_loc_t const * __csi_get_func_exit_source_loc(const csi_id_t func_exit_id) {
     return get_fed_entry(FED_COLL_FUNCTION_EXIT, func_exit_id);
 }
 
-source_loc_t const * __csi_fed_get_bb(const csi_id_t bb_id) {
+source_loc_t const * __csi_get_bb_source_loc(const csi_id_t bb_id) {
     return get_fed_entry(FED_COLL_BASICBLOCK, bb_id);
 }
 
-source_loc_t const * __csi_fed_get_callsite(const csi_id_t callsite_id) {
+source_loc_t const * __csi_get_callsite_source_loc(const csi_id_t callsite_id) {
     return get_fed_entry(FED_COLL_CALLSITE, callsite_id);
 }
 
-source_loc_t const * __csi_fed_get_load(const csi_id_t load_id) {
+source_loc_t const * __csi_get_load_source_loc(const csi_id_t load_id) {
     return get_fed_entry(FED_COLL_LOAD, load_id);
 }
 
-source_loc_t const * __csi_fed_get_store(const csi_id_t store_id) {
+source_loc_t const * __csi_get_store_source_loc(const csi_id_t store_id) {
     return get_fed_entry(FED_COLL_STORE, store_id);
 }
 
