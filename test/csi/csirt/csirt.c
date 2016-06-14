@@ -12,31 +12,17 @@
 // ID. Each FED table has its own private ID space.
 typedef struct {
     int64_t num_entries;
-    source_loc_t const * entries;
+    source_loc_t *entries;
 } fed_table_t;
 
-// A FED "collection" is a list of FED tables of a particular type
-// (e.g. basic block FEDs, function FEDs, etc). There is exactly one
-// collection per type. When units are initialized, their FED tables
-// are added to the collection of other FED tables of the same
-// type. This process occurs in __csirt_unit_init(), which is before
-// execution passes to the tool.
-typedef struct {
-    int64_t total_num_entries;
-    int64_t num_fed_tables;
-    int64_t capacity;
-    fed_table_t *tables;
-} fed_collection_t;
-
-// One FED collection per type of FED table that we maintain across
-// all units.
+// Types of FED tables that we maintain across all units.
 typedef enum {
-    FED_COLL_BASICBLOCK,
-    FED_COLL_FUNCTIONS,
-    FED_COLL_FUNCTION_EXIT,
-    FED_COLL_CALLSITE,
-    FED_COLL_LOAD,
-    FED_COLL_STORE,
+    FED_TYPE_BASICBLOCK,
+    FED_TYPE_FUNCTIONS,
+    FED_TYPE_FUNCTION_EXIT,
+    FED_TYPE_CALLSITE,
+    FED_TYPE_LOAD,
+    FED_TYPE_STORE,
     NUM_FED_TYPES // Must be last
 } fed_type_t;
 
@@ -44,19 +30,13 @@ typedef enum {
 // Globals
 // ------------------------------------------------------------------------
 
-// Starting number of FED tables allocated in a FED collection. The
-// actual number of FED tables is equal to the number of units, but it
-// can be slightly more efficient to over-allocate by a constant
-// factor fewer times versus allocating exactly more times.
-static const int DEFAULT_NUM_FED_TABLES = 128;
-
-// The list of FED collections. This is indexed by a value of
+// The list of FED tables. This is indexed by a value of
 // 'fed_type_t'.
-static fed_collection_t *fed_collections = NULL;
+static fed_table_t *fed_tables = NULL;
 
 // Initially false, set to true once the first unit is initialized,
-// which results in the FED collections list being initialized.
-static bool fed_collections_initialized = false;
+// which results in the FED list being initialized.
+static bool fed_tables_initialized = false;
 
 // Initially false, set to true once the first unit is initialized,
 // which results in the __csi_init() function being called.
@@ -66,56 +46,42 @@ static bool csi_init_called = false;
 // Private function definitions
 // ------------------------------------------------------------------------
 
-// Initialize the FED collections list, indexed by a value of type
-// fed_type_t. This is called once, by the first unit to
-// load.
-static void initialize_fed_collections() {
-    fed_collections = (fed_collection_t *)malloc(NUM_FED_TYPES * sizeof(fed_collection_t));
+// Initialize the FED tables list, indexed by a value of type
+// fed_type_t. This is called once, by the first unit to load.
+static void initialize_fed_tables() {
+    fed_tables = (fed_table_t *)malloc(NUM_FED_TYPES * sizeof(fed_table_t));
+    assert(fed_tables != NULL);
     for (unsigned i = 0; i < NUM_FED_TYPES; i++) {
-        fed_collection_t coll;
-        coll.total_num_entries = 0;
-        coll.num_fed_tables = 0;
-        coll.capacity = 0;
-        coll.tables = NULL;
-        fed_collections[i] = coll;
+        fed_table_t table;
+        table.num_entries = 0;
+        table.entries = NULL;
+        fed_tables[i] = table;
     }
-    fed_collections_initialized = true;
+    fed_tables_initialized = true;
 }
 
-// Ensure that the FED collection of the given type has enough memory
-// allocated to add one more FED table to it.
-static void ensure_fed_collection_capacity(fed_type_t fed_type) {
-    bool need_realloc = false;
-    if (!fed_collections_initialized) {
-        initialize_fed_collections();
+// Ensure that the FED table of the given type has enough memory
+// allocated to add a new unit's entries.
+static void ensure_fed_table_capacity(fed_type_t fed_type, int64_t num_new_entries) {
+    if (!fed_tables_initialized) {
+        initialize_fed_tables();
     }
-    fed_collection_t *coll = &fed_collections[fed_type];
-    if (coll->num_fed_tables == coll->capacity) {
-        if (coll->tables) {
-            coll->capacity *= 2;
-        } else {
-            coll->capacity = DEFAULT_NUM_FED_TABLES;
-        }
-        need_realloc = true;
-    }
-    if (need_realloc) {
-        coll->tables = (fed_table_t *)realloc(coll->tables,
-                                              coll->capacity * sizeof(fed_table_t *));
-    }
+    fed_table_t *table = &fed_tables[fed_type];
+    int64_t total_num_entries = table->num_entries + num_new_entries;
+    table->entries = (source_loc_t *)realloc(table->entries,
+                                             total_num_entries * sizeof(source_loc_t));
+    table->num_entries = total_num_entries;
+    assert(table->entries != NULL);
 }
 
-// Add a new FED table to the FED collection of the given type. The
-// new FED table is passed as a pointer to its list of entries
-// 'fed_entries'. The number of entries in 'fed_entries' is
-// 'num_entries'.
+// Add a new FED table of the given type.
 static inline void add_fed_table(fed_type_t fed_type, int64_t num_entries, source_loc_t const * fed_entries) {
-    ensure_fed_collection_capacity(fed_type);
-    fed_collection_t *coll = &fed_collections[fed_type];
-
-    fed_table_t new_table;
-    new_table.num_entries = num_entries;
-    new_table.entries = fed_entries;
-    coll->tables[coll->num_fed_tables++] = new_table;
+    ensure_fed_table_capacity(fed_type, num_entries);
+    fed_table_t *table = &fed_tables[fed_type];
+    csi_id_t base = table->num_entries - num_entries;
+    for (csi_id_t i = 0; i < num_entries; i++) {
+        table->entries[base + i] = fed_entries[i];
+    }
 }
 
 // The unit-local counter pointed to by 'fed_id_base' keeps track of
@@ -124,26 +90,22 @@ static inline void add_fed_table(fed_type_t fed_type, int64_t num_entries, sourc
 // ID that corresponds to the unit's local ID 0. This function stores
 // the correct value into a unit's base ID.
 static inline void update_ids(fed_type_t fed_type, int64_t num_entries, csi_id_t *fed_id_base) {
-    fed_collection_t *coll = &fed_collections[fed_type];
-    // The base ID is the current number of FED entries so far
-    *fed_id_base = coll->total_num_entries;
-    coll->total_num_entries += num_entries;
+    fed_table_t *table = &fed_tables[fed_type];
+    // The base ID is the current number of FED entries before adding
+    // the new FED table.
+    *fed_id_base = table->num_entries - num_entries;
 }
 
 // Return the FED entry of the given type, corresponding to the given
 // CSI ID.
 static inline source_loc_t const * get_fed_entry(fed_type_t fed_type, const csi_id_t csi_id) {
     // TODO(ddoucet): threadsafety
-    csi_id_t sum = 0;
-    fed_collection_t *coll = &fed_collections[fed_type];
-    for (csi_id_t i = 0; i < coll->num_fed_tables; i++) {
-        fed_table_t *table = &coll->tables[i];
-        if (csi_id < sum + table->num_entries)
-            return &table->entries[csi_id - sum];
-        sum += table->num_entries;
+    fed_table_t *table = &fed_tables[fed_type];
+    if (csi_id < table->num_entries) {
+        return &table->entries[csi_id];
+    } else {
+        return NULL;
     }
-
-    return NULL;
 }
 
 // ------------------------------------------------------------------------
@@ -196,27 +158,27 @@ void __csirt_unit_init(const char * const name,
 }
 
 source_loc_t const * __csi_get_func_source_loc(const csi_id_t func_id) {
-    return get_fed_entry(FED_COLL_FUNCTIONS, func_id);
+    return get_fed_entry(FED_TYPE_FUNCTIONS, func_id);
 }
 
 source_loc_t const * __csi_get_func_exit_source_loc(const csi_id_t func_exit_id) {
-    return get_fed_entry(FED_COLL_FUNCTION_EXIT, func_exit_id);
+    return get_fed_entry(FED_TYPE_FUNCTION_EXIT, func_exit_id);
 }
 
 source_loc_t const * __csi_get_bb_source_loc(const csi_id_t bb_id) {
-    return get_fed_entry(FED_COLL_BASICBLOCK, bb_id);
+    return get_fed_entry(FED_TYPE_BASICBLOCK, bb_id);
 }
 
 source_loc_t const * __csi_get_callsite_source_loc(const csi_id_t callsite_id) {
-    return get_fed_entry(FED_COLL_CALLSITE, callsite_id);
+    return get_fed_entry(FED_TYPE_CALLSITE, callsite_id);
 }
 
 source_loc_t const * __csi_get_load_source_loc(const csi_id_t load_id) {
-    return get_fed_entry(FED_COLL_LOAD, load_id);
+    return get_fed_entry(FED_TYPE_LOAD, load_id);
 }
 
 source_loc_t const * __csi_get_store_source_loc(const csi_id_t store_id) {
-    return get_fed_entry(FED_COLL_STORE, store_id);
+    return get_fed_entry(FED_TYPE_STORE, store_id);
 }
 
 bool __csirt_is_callsite_target_unknown(const csi_id_t callsite_id, const csi_id_t func_id) {
