@@ -89,16 +89,6 @@ source_loc_t const * __csi_fed_get_store(const csi_id_t store_id);
 
 bool __csirt_is_callsite_target_unknown(const csi_id_t csi_id, const csi_id_t func_id);
 
-// Relation table accessors.
-
-typedef struct {
-  csi_id_t first_id;
-  csi_id_t last_id;
-} range_t;
-
-csi_id_t __csi_rel_bb_to_func(const csi_id_t bb_id);
-range_t __csi_rel_func_to_bb(const csi_id_t func_id);
-
 EXTERN_C_END
 
 #endif
