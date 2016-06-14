@@ -101,10 +101,12 @@ class Quarantine {
   void NOINLINE DoRecycle(Cache *c, Callback cb) {
     while (QuarantineBatch *b = c->DequeueBatch()) {
       const uptr kPrefetch = 16;
+      CHECK(kPrefetch <= ARRAY_SIZE(b->batch));
       for (uptr i = 0; i < kPrefetch; i++)
         PREFETCH(b->batch[i]);
-      for (uptr i = 0; i < b->count; i++) {
-        PREFETCH(b->batch[i + kPrefetch]);
+      for (uptr i = 0, count = b->count; i < count; i++) {
+        if (i + kPrefetch < count)
+          PREFETCH(b->batch[i + kPrefetch]);
         cb.Recycle((Node*)b->batch[i]);
       }
       cb.Deallocate(b);
@@ -153,7 +155,7 @@ class QuarantineCache {
 
   QuarantineBatch *DequeueBatch() {
     if (list_.empty())
-      return 0;
+      return nullptr;
     QuarantineBatch *b = list_.front();
     list_.pop_front();
     SizeSub(b->size);
@@ -180,6 +182,6 @@ class QuarantineCache {
     return b;
   }
 };
-}  // namespace __sanitizer
+} // namespace __sanitizer
 
-#endif  // #ifndef SANITIZER_QUARANTINE_H
+#endif // SANITIZER_QUARANTINE_H

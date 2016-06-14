@@ -35,13 +35,15 @@ namespace __sanitizer {
 
 // --------------------- sanitizer_common.h
 uptr GetPageSize() {
-  // FIXME: there is an API for getting the system page size (GetSystemInfo or
-  // GetNativeSystemInfo), but if we use it here we get test failures elsewhere.
-  return 1U << 14;
+  SYSTEM_INFO si;
+  GetSystemInfo(&si);
+  return si.dwPageSize;
 }
 
 uptr GetMmapGranularity() {
-  return 1U << 16;  // FIXME: is this configurable?
+  SYSTEM_INFO si;
+  GetSystemInfo(&si);
+  return si.dwAllocationGranularity;
 }
 
 uptr GetMaxVirtualAddress() {
@@ -51,7 +53,7 @@ uptr GetMaxVirtualAddress() {
 }
 
 bool FileExists(const char *filename) {
-  UNIMPLEMENTED();
+  return ::GetFileAttributesA(filename) != INVALID_FILE_ATTRIBUTES;
 }
 
 uptr internal_getpid() {
@@ -83,14 +85,11 @@ void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
 }
 #endif  // #if !SANITIZER_GO
 
-void *MmapOrDie(uptr size, const char *mem_type) {
+void *MmapOrDie(uptr size, const char *mem_type, bool raw_report) {
   void *rv = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-  if (rv == 0) {
-    Report("ERROR: %s failed to "
-           "allocate 0x%zx (%zd) bytes of %s (error code: %d)\n",
-           SanitizerToolName, size, size, mem_type, GetLastError());
-    CHECK("unable to mmap" && 0);
-  }
+  if (rv == 0)
+    ReportMmapFailureAndDie(size, mem_type, "allocate",
+                            GetLastError(), raw_report);
   return rv;
 }
 
@@ -98,12 +97,75 @@ void UnmapOrDie(void *addr, uptr size) {
   if (!size || !addr)
     return;
 
-  if (VirtualFree(addr, size, MEM_DECOMMIT) == 0) {
-    Report("ERROR: %s failed to "
-           "deallocate 0x%zx (%zd) bytes at address %p (error code: %d)\n",
-           SanitizerToolName, size, size, addr, GetLastError());
-    CHECK("unable to unmap" && 0);
+  MEMORY_BASIC_INFORMATION mbi;
+  CHECK(VirtualQuery(addr, &mbi, sizeof(mbi)));
+
+  // MEM_RELEASE can only be used to unmap whole regions previously mapped with
+  // VirtualAlloc. So we first try MEM_RELEASE since it is better, and if that
+  // fails try MEM_DECOMMIT.
+  if (VirtualFree(addr, 0, MEM_RELEASE) == 0) {
+    if (VirtualFree(addr, size, MEM_DECOMMIT) == 0) {
+      Report("ERROR: %s failed to "
+             "deallocate 0x%zx (%zd) bytes at address %p (error code: %d)\n",
+             SanitizerToolName, size, size, addr, GetLastError());
+      CHECK("unable to unmap" && 0);
+    }
   }
+}
+
+// We want to map a chunk of address space aligned to 'alignment'.
+void *MmapAlignedOrDie(uptr size, uptr alignment, const char *mem_type) {
+  CHECK(IsPowerOfTwo(size));
+  CHECK(IsPowerOfTwo(alignment));
+
+  // Windows will align our allocations to at least 64K.
+  alignment = Max(alignment, GetMmapGranularity());
+
+  uptr mapped_addr =
+      (uptr)VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  if (!mapped_addr)
+    ReportMmapFailureAndDie(size, mem_type, "allocate aligned", GetLastError());
+
+  // If we got it right on the first try, return. Otherwise, unmap it and go to
+  // the slow path.
+  if (IsAligned(mapped_addr, alignment))
+    return (void*)mapped_addr;
+  if (VirtualFree((void *)mapped_addr, 0, MEM_RELEASE) == 0)
+    ReportMmapFailureAndDie(size, mem_type, "deallocate", GetLastError());
+
+  // If we didn't get an aligned address, overallocate, find an aligned address,
+  // unmap, and try to allocate at that aligned address.
+  int retries = 0;
+  const int kMaxRetries = 10;
+  for (; retries < kMaxRetries &&
+         (mapped_addr == 0 || !IsAligned(mapped_addr, alignment));
+       retries++) {
+    // Overallocate size + alignment bytes.
+    mapped_addr =
+        (uptr)VirtualAlloc(0, size + alignment, MEM_RESERVE, PAGE_NOACCESS);
+    if (!mapped_addr)
+      ReportMmapFailureAndDie(size, mem_type, "allocate aligned",
+                              GetLastError());
+
+    // Find the aligned address.
+    uptr aligned_addr = RoundUpTo(mapped_addr, alignment);
+
+    // Free the overallocation.
+    if (VirtualFree((void *)mapped_addr, 0, MEM_RELEASE) == 0)
+      ReportMmapFailureAndDie(size, mem_type, "deallocate", GetLastError());
+
+    // Attempt to allocate exactly the number of bytes we need at the aligned
+    // address. This may fail for a number of reasons, in which case we continue
+    // the loop.
+    mapped_addr = (uptr)VirtualAlloc((void *)aligned_addr, size,
+                                     MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  }
+
+  // Fail if we can't make this work quickly.
+  if (retries == kMaxRetries && mapped_addr == 0)
+    ReportMmapFailureAndDie(size, mem_type, "allocate aligned", GetLastError());
+
+  return (void *)mapped_addr;
 }
 
 void *MmapFixedNoReserve(uptr fixed_addr, uptr size, const char *name) {
@@ -120,7 +182,15 @@ void *MmapFixedNoReserve(uptr fixed_addr, uptr size, const char *name) {
 }
 
 void *MmapFixedOrDie(uptr fixed_addr, uptr size) {
-  return MmapFixedNoReserve(fixed_addr, size);
+  void *p = VirtualAlloc((LPVOID)fixed_addr, size,
+      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  if (p == 0) {
+    char mem_type[30];
+    internal_snprintf(mem_type, sizeof(mem_type), "memory at address 0x%zx",
+                      fixed_addr);
+    ReportMmapFailureAndDie(size, mem_type, "allocate", GetLastError());
+  }
+  return p;
 }
 
 void *MmapNoReserveOrDie(uptr size, const char *mem_type) {
@@ -128,7 +198,7 @@ void *MmapNoReserveOrDie(uptr size, const char *mem_type) {
   return MmapOrDie(size, mem_type);
 }
 
-void *MmapNoAccess(uptr fixed_addr, uptr size, const char *name) {
+void *MmapFixedNoAccess(uptr fixed_addr, uptr size, const char *name) {
   (void)name; // unsupported
   void *res = VirtualAlloc((LPVOID)fixed_addr, size,
                            MEM_RESERVE | MEM_COMMIT, PAGE_NOACCESS);
@@ -137,6 +207,11 @@ void *MmapNoAccess(uptr fixed_addr, uptr size, const char *name) {
            "mprotect %p (%zd) bytes at %p (error code: %d)\n",
            SanitizerToolName, size, size, fixed_addr, GetLastError());
   return res;
+}
+
+void *MmapNoAccess(uptr size) {
+  // FIXME: unsupported.
+  return nullptr;
 }
 
 bool MprotectNoAccess(uptr addr, uptr size) {
@@ -170,7 +245,7 @@ void *MapFileToMemory(const char *file_name, uptr *buff_size) {
   UNIMPLEMENTED();
 }
 
-void *MapWritableFileToMemory(void *addr, uptr size, fd_t fd, uptr offset) {
+void *MapWritableFileToMemory(void *addr, uptr size, fd_t fd, OFF_T offset) {
   UNIMPLEMENTED();
 }
 
@@ -224,26 +299,28 @@ struct ModuleInfo {
   uptr end_address;
 };
 
+#ifndef SANITIZER_GO
 int CompareModulesBase(const void *pl, const void *pr) {
   const ModuleInfo *l = (ModuleInfo *)pl, *r = (ModuleInfo *)pr;
   if (l->base_address < r->base_address)
     return -1;
   return l->base_address > r->base_address;
 }
+#endif
 }  // namespace
 
 #ifndef SANITIZER_GO
 void DumpProcessMap() {
   Report("Dumping process modules:\n");
-  InternalScopedBuffer<LoadedModule> modules(kMaxNumberOfModules);
-  uptr num_modules =
-      GetListOfModules(modules.data(), kMaxNumberOfModules, nullptr);
+  ListOfModules modules;
+  modules.init();
+  uptr num_modules = modules.size();
 
   InternalScopedBuffer<ModuleInfo> module_infos(num_modules);
   for (size_t i = 0; i < num_modules; ++i) {
     module_infos[i].filepath = modules[i].full_name();
     module_infos[i].base_address = modules[i].base_address();
-    module_infos[i].end_address = modules[i].ranges().next()->end;
+    module_infos[i].end_address = modules[i].ranges().front()->end;
   }
   qsort(module_infos.data(), num_modules, sizeof(ModuleInfo),
         CompareModulesBase);
@@ -292,11 +369,6 @@ void SetAddressSpaceUnlimited() {
   UNIMPLEMENTED();
 }
 
-char *FindPathToBinary(const char *name) {
-  // Nothing here for now.
-  return 0;
-}
-
 bool IsPathSeparator(const char c) {
   return c == '\\' || c == '/';
 }
@@ -323,8 +395,61 @@ void Abort() {
   internal__exit(3);
 }
 
-uptr GetListOfModules(LoadedModule *modules, uptr max_modules,
-                      string_predicate_t filter) {
+#ifndef SANITIZER_GO
+// Read the file to extract the ImageBase field from the PE header. If ASLR is
+// disabled and this virtual address is available, the loader will typically
+// load the image at this address. Therefore, we call it the preferred base. Any
+// addresses in the DWARF typically assume that the object has been loaded at
+// this address.
+static uptr GetPreferredBase(const char *modname) {
+  fd_t fd = OpenFile(modname, RdOnly, nullptr);
+  if (fd == kInvalidFd)
+    return 0;
+  FileCloser closer(fd);
+
+  // Read just the DOS header.
+  IMAGE_DOS_HEADER dos_header;
+  uptr bytes_read;
+  if (!ReadFromFile(fd, &dos_header, sizeof(dos_header), &bytes_read) ||
+      bytes_read != sizeof(dos_header))
+    return 0;
+
+  // The file should start with the right signature.
+  if (dos_header.e_magic != IMAGE_DOS_SIGNATURE)
+    return 0;
+
+  // The layout at e_lfanew is:
+  // "PE\0\0"
+  // IMAGE_FILE_HEADER
+  // IMAGE_OPTIONAL_HEADER
+  // Seek to e_lfanew and read all that data.
+  char buf[4 + sizeof(IMAGE_FILE_HEADER) + sizeof(IMAGE_OPTIONAL_HEADER)];
+  if (::SetFilePointer(fd, dos_header.e_lfanew, nullptr, FILE_BEGIN) ==
+      INVALID_SET_FILE_POINTER)
+    return 0;
+  if (!ReadFromFile(fd, &buf[0], sizeof(buf), &bytes_read) ||
+      bytes_read != sizeof(buf))
+    return 0;
+
+  // Check for "PE\0\0" before the PE header.
+  char *pe_sig = &buf[0];
+  if (internal_memcmp(pe_sig, "PE\0\0", 4) != 0)
+    return 0;
+
+  // Skip over IMAGE_FILE_HEADER. We could do more validation here if we wanted.
+  IMAGE_OPTIONAL_HEADER *pe_header =
+      (IMAGE_OPTIONAL_HEADER *)(pe_sig + 4 + sizeof(IMAGE_FILE_HEADER));
+
+  // Check for more magic in the PE header.
+  if (pe_header->Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC)
+    return 0;
+
+  // Finally, return the ImageBase.
+  return (uptr)pe_header->ImageBase;
+}
+
+void ListOfModules::init() {
+  clear();
   HANDLE cur_process = GetCurrentProcess();
 
   // Query the list of modules.  Start by assuming there are no more than 256
@@ -346,38 +471,44 @@ uptr GetListOfModules(LoadedModule *modules, uptr max_modules,
   }
 
   // |num_modules| is the number of modules actually present,
-  // |count| is the number of modules we return.
-  size_t nun_modules = bytes_required / sizeof(HMODULE),
-         count = 0;
-  for (size_t i = 0; i < nun_modules && count < max_modules; ++i) {
+  size_t num_modules = bytes_required / sizeof(HMODULE);
+  for (size_t i = 0; i < num_modules; ++i) {
     HMODULE handle = hmodules[i];
     MODULEINFO mi;
     if (!GetModuleInformation(cur_process, handle, &mi, sizeof(mi)))
       continue;
 
-    char module_name[MAX_PATH];
-    bool got_module_name =
-        GetModuleFileNameA(handle, module_name, sizeof(module_name));
-    if (!got_module_name)
-      module_name[0] = '\0';
-
-    if (filter && !filter(module_name))
-      continue;
+    // Get the UTF-16 path and convert to UTF-8.
+    wchar_t modname_utf16[kMaxPathLength];
+    int modname_utf16_len =
+        GetModuleFileNameW(handle, modname_utf16, kMaxPathLength);
+    if (modname_utf16_len == 0)
+      modname_utf16[0] = '\0';
+    char module_name[kMaxPathLength];
+    int module_name_len =
+        ::WideCharToMultiByte(CP_UTF8, 0, modname_utf16, modname_utf16_len + 1,
+                              &module_name[0], kMaxPathLength, NULL, NULL);
+    module_name[module_name_len] = '\0';
 
     uptr base_address = (uptr)mi.lpBaseOfDll;
     uptr end_address = (uptr)mi.lpBaseOfDll + mi.SizeOfImage;
-    LoadedModule *cur_module = &modules[count];
-    cur_module->set(module_name, base_address);
+
+    // Adjust the base address of the module so that we get a VA instead of an
+    // RVA when computing the module offset. This helps llvm-symbolizer find the
+    // right DWARF CU. In the common case that the image is loaded at it's
+    // preferred address, we will now print normal virtual addresses.
+    uptr preferred_base = GetPreferredBase(&module_name[0]);
+    uptr adjusted_base = base_address - preferred_base;
+
+    LoadedModule cur_module;
+    cur_module.set(module_name, adjusted_base);
     // We add the whole module as one single address range.
-    cur_module->addAddressRange(base_address, end_address, /*executable*/ true);
-    count++;
+    cur_module.addAddressRange(base_address, end_address, /*executable*/ true);
+    modules_.push_back(cur_module);
   }
   UnmapOrDie(hmodules, modules_buffer_size);
-
-  return count;
 };
 
-#ifndef SANITIZER_GO
 // We can't use atexit() directly at __asan_init time as the CRT is not fully
 // initialized at this point.  Place the functions into a vector and use
 // atexit() as soon as it is ready for use (i.e. after .CRT$XIC initializers).
@@ -397,15 +528,22 @@ static int RunAtexit() {
 }
 
 #pragma section(".CRT$XID", long, read)  // NOLINT
-static __declspec(allocate(".CRT$XID")) int (*__run_atexit)() = RunAtexit;
+__declspec(allocate(".CRT$XID")) int (*__run_atexit)() = RunAtexit;
 #endif
 
 // ------------------ sanitizer_libc.h
 fd_t OpenFile(const char *filename, FileAccessMode mode, error_t *last_error) {
-  if (mode != WrOnly)
+  fd_t res;
+  if (mode == RdOnly) {
+    res = CreateFile(filename, GENERIC_READ,
+                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                     nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  } else if (mode == WrOnly) {
+    res = CreateFile(filename, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                     FILE_ATTRIBUTE_NORMAL, nullptr);
+  } else {
     UNIMPLEMENTED();
-  fd_t res = CreateFile(filename, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                        FILE_ATTRIBUTE_NORMAL, nullptr);
+  }
   CHECK(res != kStdoutFd || kStdoutFd == kInvalidFd);
   CHECK(res != kStderrFd || kStderrFd == kInvalidFd);
   if (res == kInvalidFd && last_error)
@@ -419,7 +557,18 @@ void CloseFile(fd_t fd) {
 
 bool ReadFromFile(fd_t fd, void *buff, uptr buff_size, uptr *bytes_read,
                   error_t *error_p) {
-  UNIMPLEMENTED();
+  CHECK(fd != kInvalidFd);
+
+  // bytes_read can't be passed directly to ReadFile:
+  // uptr is unsigned long long on 64-bit Windows.
+  unsigned long num_read_long;
+
+  bool success = ::ReadFile(fd, buff, buff_size, &num_read_long, nullptr);
+  if (!success && error_p)
+    *error_p = GetLastError();
+  if (bytes_read)
+    *bytes_read = num_read_long;
+  return success;
 }
 
 bool SupportsColoredOutput(fd_t fd) {
@@ -431,21 +580,32 @@ bool WriteToFile(fd_t fd, const void *buff, uptr buff_size, uptr *bytes_written,
                  error_t *error_p) {
   CHECK(fd != kInvalidFd);
 
-  if (fd == kStdoutFd) {
-    fd = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (fd == 0) fd = kInvalidFd;
-  } else if (fd == kStderrFd) {
-    fd = GetStdHandle(STD_ERROR_HANDLE);
-    if (fd == 0) fd = kInvalidFd;
+  // Handle null optional parameters.
+  error_t dummy_error;
+  error_p = error_p ? error_p : &dummy_error;
+  uptr dummy_bytes_written;
+  bytes_written = bytes_written ? bytes_written : &dummy_bytes_written;
+
+  // Initialize output parameters in case we fail.
+  *error_p = 0;
+  *bytes_written = 0;
+
+  // Map the conventional Unix fds 1 and 2 to Windows handles. They might be
+  // closed, in which case this will fail.
+  if (fd == kStdoutFd || fd == kStderrFd) {
+    fd = GetStdHandle(fd == kStdoutFd ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE);
+    if (fd == 0) {
+      *error_p = ERROR_INVALID_HANDLE;
+      return false;
+    }
   }
 
-  DWORD internal_bytes_written;
-  if (fd == kInvalidFd ||
-      WriteFile(fd, buff, buff_size, &internal_bytes_written, 0)) {
-    if (error_p) *error_p = GetLastError();
+  DWORD bytes_written_32;
+  if (!WriteFile(fd, buff, buff_size, &bytes_written_32, 0)) {
+    *error_p = GetLastError();
     return false;
   } else {
-    if (bytes_written) *bytes_written = internal_bytes_written;
+    *bytes_written = bytes_written_32;
     return true;
   }
 }
@@ -611,7 +771,7 @@ void InstallDeadlySignalHandlers(SignalHandlerType handler) {
   // FIXME: Decide what to do on Windows.
 }
 
-bool IsDeadlySignal(int signum) {
+bool IsHandledDeadlySignal(int signum) {
   // FIXME: Decide what to do on Windows.
   return false;
 }
@@ -642,8 +802,8 @@ bool IsAccessibleMemoryRange(uptr beg, uptr size) {
 }
 
 SignalContext SignalContext::Create(void *siginfo, void *context) {
-  EXCEPTION_RECORD *exception_record = (EXCEPTION_RECORD*)siginfo;
-  CONTEXT *context_record = (CONTEXT*)context;
+  EXCEPTION_RECORD *exception_record = (EXCEPTION_RECORD *)siginfo;
+  CONTEXT *context_record = (CONTEXT *)context;
 
   uptr pc = (uptr)exception_record->ExceptionAddress;
 #ifdef _WIN64
@@ -655,7 +815,19 @@ SignalContext SignalContext::Create(void *siginfo, void *context) {
 #endif
   uptr access_addr = exception_record->ExceptionInformation[1];
 
-  return SignalContext(context, access_addr, pc, sp, bp);
+  // The contents of this array are documented at
+  // https://msdn.microsoft.com/en-us/library/windows/desktop/aa363082(v=vs.85).aspx
+  // The first element indicates read as 0, write as 1, or execute as 8.  The
+  // second element is the faulting address.
+  WriteFlag write_flag = SignalContext::UNKNOWN;
+  switch (exception_record->ExceptionInformation[0]) {
+  case 0: write_flag = SignalContext::READ; break;
+  case 1: write_flag = SignalContext::WRITE; break;
+  case 8: write_flag = SignalContext::UNKNOWN; break;
+  }
+  bool is_memory_access = write_flag != SignalContext::UNKNOWN;
+  return SignalContext(context, access_addr, pc, sp, bp, is_memory_access,
+                       write_flag);
 }
 
 uptr ReadBinaryName(/*out*/char *buf, uptr buf_len) {
@@ -668,6 +840,35 @@ uptr ReadBinaryName(/*out*/char *buf, uptr buf_len) {
 uptr ReadLongProcessName(/*out*/char *buf, uptr buf_len) {
   return ReadBinaryName(buf, buf_len);
 }
+
+void CheckVMASize() {
+  // Do nothing.
+}
+
+void MaybeReexec() {
+  // No need to re-exec on Windows.
+}
+
+char **GetArgv() {
+  // FIXME: Actually implement this function.
+  return 0;
+}
+
+pid_t StartSubprocess(const char *program, const char *const argv[],
+                      fd_t stdin_fd, fd_t stdout_fd, fd_t stderr_fd) {
+  // FIXME: implement on this platform
+  // Should be implemented based on
+  // SymbolizerProcess::StarAtSymbolizerSubprocess
+  // from lib/sanitizer_common/sanitizer_symbolizer_win.cc.
+  return -1;
+}
+
+bool IsProcessRunning(pid_t pid) {
+  // FIXME: implement on this platform.
+  return false;
+}
+
+int WaitForProcess(pid_t pid) { return -1; }
 
 }  // namespace __sanitizer
 

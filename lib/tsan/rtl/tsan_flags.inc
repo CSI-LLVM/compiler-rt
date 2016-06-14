@@ -45,7 +45,6 @@ TSAN_FLAG(
     "If set, all atomics are effectively sequentially consistent (seq_cst), "
     "regardless of what user actually specified.")
 TSAN_FLAG(bool, print_benign, false, "Print matched \"benign\" races at exit.")
-TSAN_FLAG(int, exitcode, 66, "Override exit status if something was reported.")
 TSAN_FLAG(bool, halt_on_error, false, "Exit after first reported error.")
 TSAN_FLAG(int, atexit_sleep_ms, 1000,
           "Sleep in main thread before exiting for that many ms "
@@ -77,3 +76,5 @@ TSAN_FLAG(int, io_sync, 1,
 TSAN_FLAG(bool, die_after_fork, true,
           "Die after multi-threaded fork if the child creates new threads.")
 TSAN_FLAG(const char *, suppressions, "", "Suppressions file name.")
+TSAN_FLAG(bool, ignore_interceptors_accesses, false,
+          "Ignore reads and writes from all interceptors.")

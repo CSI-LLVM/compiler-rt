@@ -1,13 +1,13 @@
 // RUN: %clangxx_asan -O2 %s -o %t
-// RUN: env ASAN_OPTIONS=$ASAN_OPTIONS:fast_unwind_on_fatal=1 not %run %t 2>&1 | FileCheck %s --check-prefix=CHECK-FAST
-// RUN: env ASAN_OPTIONS=$ASAN_OPTIONS:fast_unwind_on_fatal=0 not %run %t 2>&1 | FileCheck %s --check-prefix=CHECK-SLOW
+// RUN: %env_asan_opts=fast_unwind_on_fatal=1 not %run %t 2>&1 | FileCheck %s --check-prefix=CHECK-FAST
+// RUN: %env_asan_opts=fast_unwind_on_fatal=0 not %run %t 2>&1 | FileCheck %s --check-prefix=CHECK-SLOW
 
 // Test how well we unwind in presence of qsort in the stack
 // (i.e. if we can unwind through a function compiled w/o frame pointers).
 // https://code.google.com/p/address-sanitizer/issues/detail?id=137
 
 // Fast unwinder is only available on x86_64 and i386.
-// REQUIRES: x86_64-supported-target
+// REQUIRES: x86-target-arch
 
 #include <stdlib.h>
 #include <stdio.h>

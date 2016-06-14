@@ -21,8 +21,6 @@
 #include "sanitizer_common/sanitizer_stacktrace.h"
 #include "sanitizer_common/sanitizer_libc.h"
 
-#define ASAN_DEFAULT_FAILURE_EXITCODE 1
-
 #if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
 # error "The AddressSanitizer run-time should not be"
         " instrumented by AddressSanitizer"
@@ -38,9 +36,9 @@
 // If set, values like allocator chunk size, as well as defaults for some flags
 // will be changed towards less memory overhead.
 #ifndef ASAN_LOW_MEMORY
-#if SANITIZER_WORDSIZE == 32
+# if SANITIZER_IOS || (SANITIZER_WORDSIZE == 32)
 #  define ASAN_LOW_MEMORY 1
-#else
+# else
 #  define ASAN_LOW_MEMORY 0
 # endif
 #endif
@@ -75,10 +73,15 @@ void *AsanDoesNotSupportStaticLinkage();
 void AsanCheckDynamicRTPrereqs();
 void AsanCheckIncompatibleRT();
 
-void AsanOnSIGSEGV(int, void *siginfo, void *context);
+// Support function for __asan_(un)register_image_globals. Searches for the
+// loaded image containing `needle' and then enumerates all global metadata
+// structures declared in that image, applying `op' (e.g.,
+// __asan_(un)register_globals) to them.
+typedef void (*globals_op_fptr)(__asan_global *, uptr);
+void AsanApplyToGlobals(globals_op_fptr op, const void *needle);
 
-void DisableReexec();
-void MaybeReexec();
+void AsanOnDeadlySignal(int, void *siginfo, void *context);
+
 void ReadContextStack(void *context, uptr *stack, uptr *ssize);
 void StopInitOrderChecking();
 
@@ -99,6 +102,8 @@ void ReserveShadowMemoryRange(uptr beg, uptr end, const char *name);
 bool PlatformHasDifferentMemcpyAndMemmove();
 # define PLATFORM_HAS_DIFFERENT_MEMCPY_AND_MEMMOVE \
     (PlatformHasDifferentMemcpyAndMemmove())
+#elif SANITIZER_WINDOWS64
+# define PLATFORM_HAS_DIFFERENT_MEMCPY_AND_MEMMOVE false
 #else
 # define PLATFORM_HAS_DIFFERENT_MEMCPY_AND_MEMMOVE true
 #endif  // SANITIZER_MAC

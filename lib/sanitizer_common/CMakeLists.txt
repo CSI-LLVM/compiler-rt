@@ -1,7 +1,7 @@
 # Build system for the common Sanitizer runtime support library components.
 # These components are shared between AddressSanitizer and ThreadSanitizer.
 
-set(SANITIZER_SOURCES
+set(SANITIZER_SOURCES_NOTERMINATION
   sanitizer_allocator.cc
   sanitizer_common.cc
   sanitizer_deadlock_detector1.cc
@@ -11,6 +11,7 @@ set(SANITIZER_SOURCES
   sanitizer_libc.cc
   sanitizer_libignore.cc
   sanitizer_linux.cc
+  sanitizer_linux_s390.cc
   sanitizer_mac.cc
   sanitizer_persistent_allocator.cc
   sanitizer_platform_limits_linux.cc
@@ -33,6 +34,9 @@ set(SANITIZER_SOURCES
   sanitizer_thread_registry.cc
   sanitizer_win.cc)
 
+set(SANITIZER_SOURCES
+  ${SANITIZER_SOURCES_NOTERMINATION} sanitizer_termination.cc)
+
 # Libc functions stubs. These sources should be linked instead of
 # SANITIZER_LIBCDEP_SOURCES when sanitizer_common library must not depend on
 # libc.
@@ -49,7 +53,6 @@ set(SANITIZER_LIBCDEP_SOURCES
   sanitizer_stoptheworld_linux_libcdep.cc
   sanitizer_symbolizer_libcdep.cc
   sanitizer_symbolizer_posix_libcdep.cc
-  sanitizer_symbolizer_process_libcdep.cc
   sanitizer_unwind_linux_libcdep.cc)
 
 # Explicitly list all sanitizer_common headers. Not all of these are
@@ -103,9 +106,9 @@ set(SANITIZER_HEADERS
   sanitizer_symbolizer_internal.h
   sanitizer_symbolizer_libbacktrace.h
   sanitizer_symbolizer_mac.h
-  sanitizer_symbolizer_win.h
   sanitizer_syscall_generic.inc
   sanitizer_syscall_linux_x86_64.inc
+  sanitizer_syscall_linux_aarch64.inc
   sanitizer_thread_registry.h)
 
 set(SANITIZER_COMMON_DEFINITIONS)
@@ -123,49 +126,41 @@ append_have_file_definition(rpc/xdr.h HAVE_RPC_XDR_H SANITIZER_COMMON_DEFINITION
 append_have_file_definition(tirpc/rpc/xdr.h HAVE_TIRPC_RPC_XDR_H SANITIZER_COMMON_DEFINITIONS)
 
 set(SANITIZER_CFLAGS ${SANITIZER_COMMON_CFLAGS})
-append_no_rtti_flag(SANITIZER_CFLAGS)
+append_rtti_flag(OFF SANITIZER_CFLAGS)
 
 append_list_if(SANITIZER_LIMIT_FRAME_SIZE -Wframe-larger-than=570
                SANITIZER_CFLAGS)
 append_list_if(COMPILER_RT_HAS_WGLOBAL_CONSTRUCTORS_FLAG -Wglobal-constructors
                SANITIZER_CFLAGS)
 
-add_custom_target(sanitizer_common)
-set(SANITIZER_RUNTIME_LIBRARIES)
 if(APPLE)
-  # Build universal binary on APPLE.
-
-  add_compiler_rt_object_libraries(RTSanitizerCommon
-    OS ${SANITIZER_COMMON_SUPPORTED_OS}
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES ${SANITIZER_SOURCES} ${SANITIZER_LIBCDEP_SOURCES}
-    CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-  foreach(os ${SANITIZER_COMMON_SUPPORTED_OS})
-    list(APPEND SANITIZER_RUNTIME_LIBRARIES RTSanitizerCommon.${os})
-  endforeach()
-else()
-  # Otherwise, build separate libraries for each target.
-  
-  add_compiler_rt_object_libraries(RTSanitizerCommon
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES ${SANITIZER_SOURCES} CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-  add_compiler_rt_object_libraries(RTSanitizerCommonNoLibc
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES ${SANITIZER_NOLIBC_SOURCES} CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-  add_compiler_rt_object_libraries(RTSanitizerCommonLibc
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES ${SANITIZER_LIBCDEP_SOURCES} CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-  foreach(arch ${SANITIZER_COMMON_SUPPORTED_ARCH})
-    list(APPEND SANITIZER_RUNTIME_LIBRARIES RTSanitizerCommon.${arch}
-                                            RTSanitizerCommonLibc.${arch})
-  endforeach()
+  set(OS_OPTION OS ${SANITIZER_COMMON_SUPPORTED_OS})
 endif()
 
-add_dependencies(compiler-rt sanitizer_common)
+add_compiler_rt_object_libraries(RTSanitizerCommon
+  ${OS_OPTION}
+  ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
+  SOURCES ${SANITIZER_SOURCES}
+  CFLAGS ${SANITIZER_CFLAGS}
+  DEFS ${SANITIZER_COMMON_DEFINITIONS})
+add_compiler_rt_object_libraries(RTSanitizerCommonNoTermination
+  ${OS_OPTION}
+  ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
+  SOURCES ${SANITIZER_SOURCES_NOTERMINATION}
+  CFLAGS ${SANITIZER_CFLAGS}
+  DEFS ${SANITIZER_COMMON_DEFINITIONS})
+add_compiler_rt_object_libraries(RTSanitizerCommonNoLibc
+  ${OS_OPTION}
+  ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
+  SOURCES ${SANITIZER_NOLIBC_SOURCES}
+  CFLAGS ${SANITIZER_CFLAGS}
+  DEFS ${SANITIZER_COMMON_DEFINITIONS})
+add_compiler_rt_object_libraries(RTSanitizerCommonLibc
+  ${OS_OPTION}
+  ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
+  SOURCES ${SANITIZER_LIBCDEP_SOURCES}
+  CFLAGS ${SANITIZER_CFLAGS}
+  DEFS ${SANITIZER_COMMON_DEFINITIONS})
 
 # Unit tests for common sanitizer runtime.
 if(COMPILER_RT_INCLUDE_TESTS)

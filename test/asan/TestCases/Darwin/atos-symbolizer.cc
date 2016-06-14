@@ -1,7 +1,7 @@
 // Check that the `atos` symbolizer works.
 
-// RUN: %clangxx_asan -O0 %s -o %t 
-// RUN: env ASAN_OPTIONS=$ASAN_OPTIONS:verbosity=2 ASAN_SYMBOLIZER_PATH=$(which atos) not %run %t 2>&1 | FileCheck %s
+// RUN: %clangxx_asan -O0 %s -o %t
+// RUN: %env_asan_opts=verbosity=2 ASAN_SYMBOLIZER_PATH=$(which atos) not %run %t 2>&1 | FileCheck %s
 
 #include <stdlib.h>
 #include <string.h>
@@ -11,8 +11,8 @@ int main(int argc, char **argv) {
   int res = x[argc];
   free(x);
   free(x + argc - 1);  // BOOM
-  // CHECK: AddressSanitizer: attempting double-free{{.*}}in thread T0
   // CHECK: Using atos at user-specified path:
+  // CHECK: AddressSanitizer: attempting double-free{{.*}}in thread T0
   // CHECK: #0 0x{{.*}} in {{.*}}free
   // CHECK: #1 0x{{.*}} in main {{.*}}atos-symbolizer.cc:[[@LINE-4]]
   // CHECK: freed by thread T0 here:

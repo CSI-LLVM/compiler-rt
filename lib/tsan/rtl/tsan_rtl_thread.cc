@@ -42,7 +42,7 @@ void ThreadContext::OnDead() {
 void ThreadContext::OnJoined(void *arg) {
   ThreadState *caller_thr = static_cast<ThreadState *>(arg);
   AcquireImpl(caller_thr, 0, &sync);
-  sync.Reset(&caller_thr->clock_cache);
+  sync.Reset(&caller_thr->proc()->clock_cache);
 }
 
 struct OnCreatedArgs {
@@ -55,6 +55,8 @@ void ThreadContext::OnCreated(void *arg) {
   if (tid == 0)
     return;
   OnCreatedArgs *args = static_cast<OnCreatedArgs *>(arg);
+  if (!args->thr)  // GCD workers don't have a parent thread.
+    return;
   args->thr->fast_state.IncrementEpoch();
   // Can't increment epoch w/o writing to the trace as well.
   TraceAddEvent(args->thr, args->thr->fast_state, EventTypeMop, 0);
@@ -72,7 +74,7 @@ void ThreadContext::OnReset() {
 
 void ThreadContext::OnDetached(void *arg) {
   ThreadState *thr1 = static_cast<ThreadState*>(arg);
-  sync.Reset(&thr1->clock_cache);
+  sync.Reset(&thr1->proc()->clock_cache);
 }
 
 struct OnStartedArgs {
@@ -104,13 +106,8 @@ void ThreadContext::OnStarted(void *arg) {
   thr->shadow_stack_pos = thr->shadow_stack;
   thr->shadow_stack_end = thr->shadow_stack + kInitStackSize;
 #endif
-#ifndef SANITIZER_GO
-  AllocatorThreadStart(thr);
-#endif
-  if (common_flags()->detect_deadlocks) {
-    thr->dd_pt = ctx->dd->CreatePhysicalThread();
+  if (common_flags()->detect_deadlocks)
     thr->dd_lt = ctx->dd->CreateLogicalThread(unique_id);
-  }
   thr->fast_state.SetHistorySize(flags()->history_size);
   // Commit switch to the new part of the trace.
   // TraceAddEvent will reset stack0/mset0 in the new part for us.
@@ -119,7 +116,7 @@ void ThreadContext::OnStarted(void *arg) {
   thr->fast_synch_epoch = epoch0;
   AcquireImpl(thr, 0, &sync);
   StatInc(thr, StatSyncAcquire);
-  sync.Reset(&thr->clock_cache);
+  sync.Reset(&thr->proc()->clock_cache);
   thr->is_inited = true;
   DPrintf("#%d: ThreadStart epoch=%zu stk_addr=%zx stk_size=%zx "
           "tls_addr=%zx tls_size=%zx\n",
@@ -136,15 +133,8 @@ void ThreadContext::OnFinished() {
   }
   epoch1 = thr->fast_state.epoch();
 
-  if (common_flags()->detect_deadlocks) {
-    ctx->dd->DestroyPhysicalThread(thr->dd_pt);
+  if (common_flags()->detect_deadlocks)
     ctx->dd->DestroyLogicalThread(thr->dd_lt);
-  }
-  ctx->clock_alloc.FlushCache(&thr->clock_cache);
-  ctx->metamap.OnThreadIdle(thr);
-#ifndef SANITIZER_GO
-  AllocatorThreadFinish(thr);
-#endif
   thr->~ThreadState();
 #if TSAN_COLLECT_STATS
   StatAggregate(ctx->stat, thr->stat);
@@ -231,8 +221,10 @@ int ThreadCount(ThreadState *thr) {
 int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached) {
   StatInc(thr, StatThreadCreate);
   OnCreatedArgs args = { thr, pc };
-  int tid = ctx->thread_registry->CreateThread(uid, detached, thr->tid, &args);
-  DPrintf("#%d: ThreadCreate tid=%d uid=%zu\n", thr->tid, tid, uid);
+  u32 parent_tid = thr ? thr->tid : kInvalidTid;  // No parent for GCD workers.
+  int tid =
+      ctx->thread_registry->CreateThread(uid, detached, parent_tid, &args);
+  DPrintf("#%d: ThreadCreate tid=%d uid=%zu\n", parent_tid, tid, uid);
   StatSet(thr, StatThreadMaxAlive, ctx->thread_registry->GetMaxAliveThreads());
   return tid;
 }

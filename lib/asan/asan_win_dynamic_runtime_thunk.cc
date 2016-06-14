@@ -24,11 +24,12 @@
 // Using #ifdef rather than relying on Makefiles etc.
 // simplifies the build procedure.
 #ifdef ASAN_DYNAMIC_RUNTIME_THUNK
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 // First, declare CRT sections we'll be using in this file
 #pragma section(".CRT$XID", long, read)  // NOLINT
-#pragma section(".CRT$XIZ", long, read)  // NOLINT
+#pragma section(".CRT$XCAB", long, read)  // NOLINT
 #pragma section(".CRT$XTW", long, read)  // NOLINT
 #pragma section(".CRT$XTY", long, read)  // NOLINT
 
@@ -58,6 +59,7 @@ int __asan_option_detect_stack_use_after_return =
 // using atexit() that calls a small subset of C terminators
 // where LLVM global_dtors is placed.  Fingers crossed, no other C terminators
 // are there.
+extern "C" int __cdecl atexit(void (__cdecl *f)(void));
 extern "C" void __cdecl _initterm(void *a, void *b);
 
 namespace {
@@ -91,7 +93,8 @@ static int SetSEHFilter() { return __asan_set_seh_filter(); }
 
 // Unfortunately, putting a pointer to __asan_set_seh_filter into
 // __asan_intercept_seh gets optimized out, so we have to use an extra function.
-__declspec(allocate(".CRT$XIZ")) int (*__asan_seh_interceptor)() = SetSEHFilter;
+__declspec(allocate(".CRT$XCAB")) int (*__asan_seh_interceptor)() =
+    SetSEHFilter;
 }
 
 #endif // ASAN_DYNAMIC_RUNTIME_THUNK

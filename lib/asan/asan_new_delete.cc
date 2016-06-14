@@ -20,9 +20,25 @@
 
 #include <stddef.h>
 
-// C++ operators can't have visibility attributes on Windows.
+// C++ operators can't have dllexport attributes on Windows. We export them
+// anyway by passing extra -export flags to the linker, which is exactly that
+// dllexport would normally do. We need to export them in order to make the
+// VS2015 dynamic CRT (MD) work.
 #if SANITIZER_WINDOWS
 # define CXX_OPERATOR_ATTRIBUTE
+# ifdef _WIN64
+#  pragma comment(linker, "/export:??2@YAPEAX_K@Z")   // operator new
+#  pragma comment(linker, "/export:??3@YAXPEAX@Z")    // operator delete
+#  pragma comment(linker, "/export:??3@YAXPEAX_K@Z")  // sized operator delete
+#  pragma comment(linker, "/export:??_U@YAPEAX_K@Z")  // operator new[]
+#  pragma comment(linker, "/export:??_V@YAXPEAX@Z")   // operator delete[]
+# else
+#  pragma comment(linker, "/export:??2@YAPAXI@Z")   // operator new
+#  pragma comment(linker, "/export:??3@YAXPAX@Z")   // operator delete
+#  pragma comment(linker, "/export:??3@YAXPAXI@Z")  // sized operator delete
+#  pragma comment(linker, "/export:??_U@YAPAXI@Z")  // operator new[]
+#  pragma comment(linker, "/export:??_V@YAXPAX@Z")  // operator delete[]
+# endif
 #else
 # define CXX_OPERATOR_ATTRIBUTE INTERCEPTOR_ATTRIBUTE
 #endif
@@ -30,7 +46,7 @@
 using namespace __asan;  // NOLINT
 
 // This code has issues on OSX.
-// See https://code.google.com/p/address-sanitizer/issues/detail?id=131.
+// See https://github.com/google/sanitizers/issues/131.
 
 // Fake std::nothrow_t to avoid including <new>.
 namespace std {
@@ -90,11 +106,11 @@ INTERCEPTOR(void *, _ZnamRKSt9nothrow_t, size_t size, std::nothrow_t const&) {
 
 #if !SANITIZER_MAC
 CXX_OPERATOR_ATTRIBUTE
-void operator delete(void *ptr) throw() {
+void operator delete(void *ptr) NOEXCEPT {
   OPERATOR_DELETE_BODY(FROM_NEW);
 }
 CXX_OPERATOR_ATTRIBUTE
-void operator delete[](void *ptr) throw() {
+void operator delete[](void *ptr) NOEXCEPT {
   OPERATOR_DELETE_BODY(FROM_NEW_BR);
 }
 CXX_OPERATOR_ATTRIBUTE
@@ -106,12 +122,12 @@ void operator delete[](void *ptr, std::nothrow_t const&) {
   OPERATOR_DELETE_BODY(FROM_NEW_BR);
 }
 CXX_OPERATOR_ATTRIBUTE
-void operator delete(void *ptr, size_t size) throw() {
+void operator delete(void *ptr, size_t size) NOEXCEPT {
   GET_STACK_TRACE_FREE;
   asan_sized_free(ptr, size, &stack, FROM_NEW);
 }
 CXX_OPERATOR_ATTRIBUTE
-void operator delete[](void *ptr, size_t size) throw() {
+void operator delete[](void *ptr, size_t size) NOEXCEPT {
   GET_STACK_TRACE_FREE;
   asan_sized_free(ptr, size, &stack, FROM_NEW_BR);
 }

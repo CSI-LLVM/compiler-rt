@@ -115,7 +115,9 @@ static __ubsan::HashValue *getTypeCacheHashTableBucket(__ubsan::HashValue V) {
 static bool isDerivedFromAtOffset(const abi::__class_type_info *Derived,
                                   const abi::__class_type_info *Base,
                                   sptr Offset) {
-  if (Derived->__type_name == Base->__type_name)
+  if (Derived->__type_name == Base->__type_name ||
+      (SANITIZER_NON_UNIQUE_TYPEINFO &&
+       !internal_strcmp(Derived->__type_name, Base->__type_name)))
     return Offset == 0;
 
   if (const abi::__si_class_type_info *SI =
@@ -185,8 +187,8 @@ namespace {
 
 struct VtablePrefix {
   /// The offset from the vptr to the start of the most-derived object.
-  /// This should never be greater than zero, and will usually be exactly
-  /// zero.
+  /// This will only be greater than zero in some virtual base class vtables
+  /// used during object con-/destruction, and will usually be exactly zero.
   sptr Offset;
   /// The type_info object describing the most-derived class type.
   std::type_info *TypeInfo;
@@ -196,7 +198,7 @@ VtablePrefix *getVtablePrefix(void *Vtable) {
   if (!Vptr)
     return 0;
   VtablePrefix *Prefix = Vptr - 1;
-  if (Prefix->Offset > 0 || !Prefix->TypeInfo)
+  if (!Prefix->TypeInfo)
     // This can't possibly be a valid vtable.
     return 0;
   return Prefix;
@@ -219,6 +221,10 @@ bool __ubsan::checkDynamicType(void *Object, void *Type, HashValue Hash) {
   VtablePrefix *Vtable = getVtablePrefix(VtablePtr);
   if (!Vtable)
     return false;
+  if (Vtable->Offset < -VptrMaxOffsetToTop || Vtable->Offset > VptrMaxOffsetToTop) {
+    // Too large or too small offset are signs of Vtable corruption.
+    return false;
+  }
 
   // Check that this is actually a type_info object for a class type.
   abi::__class_type_info *Derived =
@@ -241,6 +247,8 @@ __ubsan::getDynamicTypeInfoFromVtable(void *VtablePtr) {
   VtablePrefix *Vtable = getVtablePrefix(VtablePtr);
   if (!Vtable)
     return DynamicTypeInfo(0, 0, 0);
+  if (Vtable->Offset < -VptrMaxOffsetToTop || Vtable->Offset > VptrMaxOffsetToTop)
+    return DynamicTypeInfo(0, Vtable->Offset, 0);
   const abi::__class_type_info *ObjectType = findBaseAtOffset(
     static_cast<const abi::__class_type_info*>(Vtable->TypeInfo),
     -Vtable->Offset);

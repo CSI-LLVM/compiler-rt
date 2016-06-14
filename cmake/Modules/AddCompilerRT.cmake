@@ -1,4 +1,3 @@
-include(AddLLVM)
 include(ExternalProject)
 include(CompilerRTUtils)
 
@@ -19,6 +18,7 @@ function(add_compiler_rt_object_libraries name)
       set(libname "${name}.${os}")
       set(libnames ${libnames} ${libname})
       set(extra_cflags_${libname} ${DARWIN_${os}_CFLAGS})
+      list_intersect(LIB_ARCHS_${libname} DARWIN_${os}_ARCHS LIB_ARCHS)
     endforeach()
   else()
     foreach(arch ${LIB_ARCHS})
@@ -26,7 +26,7 @@ function(add_compiler_rt_object_libraries name)
       set(libnames ${libnames} ${libname})
       set(extra_cflags_${libname} ${TARGET_${arch}_CFLAGS})
       if(NOT CAN_TARGET_${arch})
-        message(FATAL_ERROR "Archtecture ${arch} can't be targeted")
+        message(FATAL_ERROR "Architecture ${arch} can't be targeted")
         return()
       endif()
     endforeach()
@@ -39,93 +39,188 @@ function(add_compiler_rt_object_libraries name)
     set_property(TARGET ${libname} APPEND PROPERTY
       COMPILE_DEFINITIONS ${LIB_DEFS})
     if(APPLE)
-      set_target_properties(${libname} PROPERTIES OSX_ARCHITECTURES "${LIB_ARCHS}")
+      set_target_properties(${libname} PROPERTIES
+        OSX_ARCHITECTURES "${LIB_ARCHS_${libname}}")
     endif()
   endforeach()
 endfunction()
 
-# Adds static or shared runtime for a given architecture and puts it in the
-# proper directory in the build and install trees.
-# add_compiler_rt_runtime(<name> <arch> {STATIC,SHARED}
+# Takes a list of object library targets, and a suffix and appends the proper
+# TARGET_OBJECTS string to the output variable.
+# format_object_libs(<output> <suffix> ...)
+macro(format_object_libs output suffix)
+  foreach(lib ${ARGN})
+    list(APPEND ${output} $<TARGET_OBJECTS:${lib}.${suffix}>)
+  endforeach()
+endmacro()
+
+# Adds static or shared runtime for a list of architectures and operating
+# systems and puts it in the proper directory in the build and install trees.
+# add_compiler_rt_runtime(<name>
+#                         {STATIC|SHARED}
+#                         ARCHS <architectures>
+#                         OS <os list>
 #                         SOURCES <source files>
 #                         CFLAGS <compile flags>
+#                         LINKFLAGS <linker flags>
 #                         DEFS <compile definitions>
-#                         OUTPUT_NAME <output library name>)
-macro(add_compiler_rt_runtime name arch type)
-  if(CAN_TARGET_${arch})
-    cmake_parse_arguments(LIB "" "OUTPUT_NAME" "SOURCES;CFLAGS;LINKFLAGS;DEFS" ${ARGN})
-    add_library(${name} ${type} ${LIB_SOURCES})
-    # Setup compile flags and definitions.
-    set_target_compile_flags(${name}
-      ${TARGET_${arch}_CFLAGS} ${LIB_CFLAGS})
-    set_target_link_flags(${name}
-      ${TARGET_${arch}_CFLAGS} ${LIB_CFLAGS} ${LIB_LINKFLAGS})
-    set_property(TARGET ${name} APPEND PROPERTY
-      COMPILE_DEFINITIONS ${LIB_DEFS})
-    # Setup correct output directory in the build tree.
-    set_target_properties(${name} PROPERTIES
-      ARCHIVE_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
-      LIBRARY_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
-      RUNTIME_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
-    if ("${LIB_OUTPUT_NAME}" STREQUAL "")
-      set_target_properties(${name} PROPERTIES
-        OUTPUT_NAME ${name}${COMPILER_RT_OS_SUFFIX})
-    else()
-      set_target_properties(${name} PROPERTIES
-        OUTPUT_NAME ${LIB_OUTPUT_NAME})
-    endif()
-    # Add installation command.
-    install(TARGETS ${name}
-      ARCHIVE DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR}
-      LIBRARY DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR}
-      RUNTIME DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR})
-  else()
-    message(FATAL_ERROR "Archtecture ${arch} can't be targeted")
+#                         LINK_LIBS <linked libraries> (only for shared library)
+#                         OBJECT_LIBS <object libraries to use as sources>
+#                         PARENT_TARGET <convenience parent target>)
+function(add_compiler_rt_runtime name type)
+  if(NOT type MATCHES "^(STATIC|SHARED)$")
+    message(FATAL_ERROR "type argument must be STATIC or SHARED")
+    return()
   endif()
-endmacro()
+  cmake_parse_arguments(LIB
+    ""
+    "PARENT_TARGET"
+    "OS;ARCHS;SOURCES;CFLAGS;LINKFLAGS;DEFS;LINK_LIBS;OBJECT_LIBS"
+    ${ARGN})
+  set(libnames)
+  if(APPLE)
+    foreach(os ${LIB_OS})
+      if(type STREQUAL "STATIC")
+        set(libname "${name}_${os}")
+      else()
+        set(libname "${name}_${os}_dynamic")
+        set(extra_linkflags_${libname} ${DARWIN_${os}_LINKFLAGS} ${LIB_LINKFLAGS})
+      endif()
+      list_intersect(LIB_ARCHS_${libname} DARWIN_${os}_ARCHS LIB_ARCHS)
+      if(LIB_ARCHS_${libname})
+        list(APPEND libnames ${libname})
+        set(extra_cflags_${libname} ${DARWIN_${os}_CFLAGS} ${LIB_CFLAGS})
+        set(output_name_${libname} ${libname}${COMPILER_RT_OS_SUFFIX})
+        set(sources_${libname} ${LIB_SOURCES})
+        format_object_libs(sources_${libname} ${os} ${LIB_OBJECT_LIBS})
+      endif()
+    endforeach()
+  else()
+    foreach(arch ${LIB_ARCHS})
+      if(NOT CAN_TARGET_${arch})
+        message(FATAL_ERROR "Architecture ${arch} can't be targeted")
+        return()
+      endif()
+      if(type STREQUAL "STATIC")
+        set(libname "${name}-${arch}")
+        set(output_name_${libname} ${libname}${COMPILER_RT_OS_SUFFIX})
+      else()
+        set(libname "${name}-dynamic-${arch}")
+        set(extra_linkflags_${libname} ${TARGET_${arch}_CFLAGS} ${LIB_CFLAGS} ${LIB_LINKFLAGS})
+        if(WIN32)
+          set(output_name_${libname} ${name}_dynamic-${arch}${COMPILER_RT_OS_SUFFIX})
+        else()
+          set(output_name_${libname} ${name}-${arch}${COMPILER_RT_OS_SUFFIX})
+        endif()
+      endif()
+      set(sources_${libname} ${LIB_SOURCES})
+      format_object_libs(sources_${libname} ${arch} ${LIB_OBJECT_LIBS})
+      set(libnames ${libnames} ${libname})
+      set(extra_cflags_${libname} ${TARGET_${arch}_CFLAGS} ${LIB_CFLAGS})
+    endforeach()
+  endif()
 
-# Same as add_compiler_rt_runtime(... STATIC), but creates a universal library
-# for several architectures.
-# add_compiler_rt_osx_static_runtime(<name> ARCHS <architectures>
-#                                    SOURCES <source files>
-#                                    CFLAGS <compile flags>
-#                                    DEFS <compile definitions>)
-macro(add_compiler_rt_osx_static_runtime name)
-  cmake_parse_arguments(LIB "" "" "ARCHS;SOURCES;CFLAGS;DEFS" ${ARGN})
-  add_library(${name} STATIC ${LIB_SOURCES})
-  set_target_compile_flags(${name} ${LIB_CFLAGS})
-  set_property(TARGET ${name} APPEND PROPERTY
-    COMPILE_DEFINITIONS ${LIB_DEFS})
-  set_target_properties(${name} PROPERTIES
-    OSX_ARCHITECTURES "${LIB_ARCHS}"
-    ARCHIVE_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
-  install(TARGETS ${name}
-    ARCHIVE DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR})
-endmacro()
+  if(NOT libnames)
+    return()
+  endif()
 
-# Adds dynamic runtime library on osx/iossim, which supports multiple
-# architectures.
-# add_compiler_rt_darwin_dynamic_runtime(<name> <os>
-#                                        ARCHS <architectures>
-#                                        SOURCES <source files>
-#                                        CFLAGS <compile flags>
-#                                        DEFS <compile definitions>
-#                                        LINKFLAGS <link flags>)
-macro(add_compiler_rt_darwin_dynamic_runtime name os)
-  cmake_parse_arguments(LIB "" "" "ARCHS;SOURCES;CFLAGS;DEFS;LINKFLAGS" ${ARGN})
-  add_library(${name} SHARED ${LIB_SOURCES})
-  set_target_compile_flags(${name} ${LIB_CFLAGS} ${DARWIN_${os}_CFLAGS})
-  set_target_link_flags(${name} ${LIB_LINKFLAGS} ${DARWIN_${os}_LINKFLAGS})
-  set_property(TARGET ${name} APPEND PROPERTY
-    COMPILE_DEFINITIONS ${LIB_DEFS})
-  set_target_properties(${name} PROPERTIES
-    OSX_ARCHITECTURES "${LIB_ARCHS}"
-    LIBRARY_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
-  install(TARGETS ${name}
-    LIBRARY DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR})
-endmacro()
+  if(LIB_PARENT_TARGET)
+    # If the parent targets aren't created we should create them
+    if(NOT TARGET ${LIB_PARENT_TARGET})
+      add_custom_target(${LIB_PARENT_TARGET})
+    endif()
+    if(NOT TARGET install-${LIB_PARENT_TARGET})
+      # The parent install target specifies the parent component to scrape up
+      # anything not installed by the individual install targets, and to handle
+      # installation when running the multi-configuration generators.
+      add_custom_target(install-${LIB_PARENT_TARGET}
+                        DEPENDS ${LIB_PARENT_TARGET}
+                        COMMAND "${CMAKE_COMMAND}"
+                                -DCMAKE_INSTALL_COMPONENT=${LIB_PARENT_TARGET}
+                                -P "${CMAKE_BINARY_DIR}/cmake_install.cmake")
+    endif()
+  endif()
 
-set(COMPILER_RT_TEST_CFLAGS)
+  foreach(libname ${libnames})
+    # If you have are using a multi-configuration generator we don't generate
+    # per-library install rules, so we fall back to the parent target COMPONENT
+    if(CMAKE_CONFIGURATION_TYPES AND LIB_PARENT_TARGET)
+      set(COMPONENT_OPTION COMPONENT ${LIB_PARENT_TARGET})
+    else()
+      set(COMPONENT_OPTION COMPONENT ${libname})
+    endif()
+
+    add_library(${libname} ${type} ${sources_${libname}})
+    set_target_compile_flags(${libname} ${extra_cflags_${libname}})
+    set_target_link_flags(${libname} ${extra_linkflags_${libname}})
+    set_property(TARGET ${libname} APPEND PROPERTY 
+                COMPILE_DEFINITIONS ${LIB_DEFS})
+
+    # For RUNTIME_OUTPUT_DIRECTORY variable, Multi-configuration generators
+    # append a per-configuration subdirectory to the specified directory.
+    # To avoid the appended folder, the configuration specific variable must be
+    # set 'RUNTIME_OUTPUT_DIRECTORY_${CONF}':
+    # RUNTIME_OUTPUT_DIRECTORY_DEBUG, RUNTIME_OUTPUT_DIRECTORY_RELEASE, ...
+    if(CMAKE_CONFIGURATION_TYPES)
+      foreach(build_mode ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER "${build_mode}" CONFIG_SUFFIX)
+        set_target_properties(${libname} PROPERTIES
+            "ARCHIVE_OUTPUT_DIRECTORY_${CONFIG_SUFFIX}" ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
+            "LIBRARY_OUTPUT_DIRECTORY_${CONFIG_SUFFIX}" ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
+            "RUNTIME_OUTPUT_DIRECTORY_${CONFIG_SUFFIX}" ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
+      endforeach()
+    else()
+      set_target_properties(${libname} PROPERTIES
+          ARCHIVE_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
+          LIBRARY_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
+          RUNTIME_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
+    endif()
+
+    set_target_properties(${libname} PROPERTIES
+        OUTPUT_NAME ${output_name_${libname}})
+    if(LIB_LINK_LIBS AND ${type} STREQUAL "SHARED")
+      target_link_libraries(${libname} ${LIB_LINK_LIBS})
+    endif()
+    install(TARGETS ${libname}
+      ARCHIVE DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR}
+              ${COMPONENT_OPTION}
+      LIBRARY DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR}
+              ${COMPONENT_OPTION}
+      RUNTIME DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR}
+              ${COMPONENT_OPTION})
+
+    # We only want to generate per-library install targets if you aren't using
+    # an IDE because the extra targets get cluttered in IDEs.
+    if(NOT CMAKE_CONFIGURATION_TYPES)
+      add_custom_target(install-${libname}
+                        DEPENDS ${libname}
+                        COMMAND "${CMAKE_COMMAND}"
+                                -DCMAKE_INSTALL_COMPONENT=${libname}
+                                -P "${CMAKE_BINARY_DIR}/cmake_install.cmake")
+      # If you have a parent target specified, we bind the new install target
+      # to the parent install target.
+      if(LIB_PARENT_TARGET)
+        add_dependencies(install-${LIB_PARENT_TARGET} install-${libname})
+      endif()
+    endif()
+    if(APPLE)
+      set_target_properties(${libname} PROPERTIES
+      OSX_ARCHITECTURES "${LIB_ARCHS_${libname}}")
+    endif()
+
+    if(type STREQUAL "SHARED")
+      rt_externalize_debuginfo(${libname})
+    endif()
+  endforeach()
+  if(LIB_PARENT_TARGET)
+    add_dependencies(${LIB_PARENT_TARGET} ${libnames})
+  endif()
+endfunction()
+
+# when cross compiling, COMPILER_RT_TEST_COMPILER_CFLAGS help
+# in compilation and linking of unittests.
+string(REPLACE " " ";" COMPILER_RT_UNITTEST_CFLAGS "${COMPILER_RT_TEST_COMPILER_CFLAGS}")
+set(COMPILER_RT_UNITTEST_LINKFLAGS ${COMPILER_RT_UNITTEST_CFLAGS})
 
 # Unittests support.
 set(COMPILER_RT_GTEST_PATH ${LLVM_MAIN_SRC_DIR}/utils/unittest/googletest)
@@ -137,14 +232,14 @@ set(COMPILER_RT_GTEST_CFLAGS
   -I${COMPILER_RT_GTEST_PATH}
 )
 
-append_list_if(COMPILER_RT_DEBUG -DSANITIZER_DEBUG=1 COMPILER_RT_TEST_CFLAGS)
+append_list_if(COMPILER_RT_DEBUG -DSANITIZER_DEBUG=1 COMPILER_RT_UNITTEST_CFLAGS)
 
 if(MSVC)
   # clang doesn't support exceptions on Windows yet.
-  list(APPEND COMPILER_RT_TEST_CFLAGS -D_HAS_EXCEPTIONS=0)
+  list(APPEND COMPILER_RT_UNITTEST_CFLAGS -D_HAS_EXCEPTIONS=0)
 
   # We should teach clang to understand "#pragma intrinsic", see PR19898.
-  list(APPEND COMPILER_RT_TEST_CFLAGS -Wno-undefined-inline)
+  list(APPEND COMPILER_RT_UNITTEST_CFLAGS -Wno-undefined-inline)
 
   # Clang doesn't support SEH on Windows yet.
   list(APPEND COMPILER_RT_GTEST_CFLAGS -DGTEST_HAS_SEH=0)
@@ -169,14 +264,18 @@ endif()
 #                      LINK_FLAGS <link flags>)
 macro(add_compiler_rt_test test_suite test_name)
   cmake_parse_arguments(TEST "" "SUBDIR" "OBJECTS;DEPS;LINK_FLAGS" "" ${ARGN})
+  set(output_bin ${CMAKE_CURRENT_BINARY_DIR})
   if(TEST_SUBDIR)
-    set(output_bin "${CMAKE_CURRENT_BINARY_DIR}/${TEST_SUBDIR}/${test_name}")
-  else()
-    set(output_bin "${CMAKE_CURRENT_BINARY_DIR}/${test_name}")
+    set(output_bin "${output_bin}/${TEST_SUBDIR}")
   endif()
+  if(CMAKE_CONFIGURATION_TYPES)
+    set(output_bin "${output_bin}/${CMAKE_CFG_INTDIR}")
+  endif()
+  set(output_bin "${output_bin}/${test_name}")
   if(MSVC)
     set(output_bin "${output_bin}.exe")
   endif()
+
   # Use host compiler in a standalone build, and just-built Clang otherwise.
   if(NOT COMPILER_RT_STANDALONE_BUILD)
     list(APPEND TEST_DEPS clang)
@@ -200,7 +299,7 @@ macro(add_compiler_rt_test test_suite test_name)
   add_dependencies(${test_suite} ${test_name})
 endmacro()
 
-macro(add_compiler_rt_resource_file target_name file_name)
+macro(add_compiler_rt_resource_file target_name file_name component)
   set(src_file "${CMAKE_CURRENT_SOURCE_DIR}/${file_name}")
   set(dst_file "${COMPILER_RT_OUTPUT_DIR}/${file_name}")
   add_custom_command(OUTPUT ${dst_file}
@@ -209,7 +308,10 @@ macro(add_compiler_rt_resource_file target_name file_name)
     COMMENT "Copying ${file_name}...")
   add_custom_target(${target_name} DEPENDS ${dst_file})
   # Install in Clang resource directory.
-  install(FILES ${file_name} DESTINATION ${COMPILER_RT_INSTALL_PATH})
+  install(FILES ${file_name}
+    DESTINATION ${COMPILER_RT_INSTALL_PATH}
+    COMPONENT ${component})
+  add_dependencies(${component} ${target_name})
 endmacro()
 
 macro(add_compiler_rt_script name)
@@ -248,12 +350,14 @@ macro(add_custom_libcxx name prefix)
   ExternalProject_Add(${name}
     PREFIX ${prefix}
     SOURCE_DIR ${COMPILER_RT_LIBCXX_PATH}
-    CMAKE_ARGS -DCMAKE_C_COMPILER=${COMPILER_RT_TEST_COMPILER}
-               -DCMAKE_CXX_COMPILER=${COMPILER_RT_TEST_COMPILER}
+    CMAKE_ARGS -DCMAKE_MAKE_PROGRAM:STRING=${CMAKE_MAKE_PROGRAM}
+               -DCMAKE_C_COMPILER=${COMPILER_RT_TEST_COMPILER}
+               -DCMAKE_CXX_COMPILER=${COMPILER_RT_TEST_CXX_COMPILER}
                -DCMAKE_C_FLAGS=${LIBCXX_CFLAGS}
                -DCMAKE_CXX_FLAGS=${LIBCXX_CFLAGS}
                -DCMAKE_BUILD_TYPE=Release
                -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+               -DLLVM_PATH=${LLVM_MAIN_SRC_DIR}
     LOG_BUILD 1
     LOG_CONFIGURE 1
     LOG_INSTALL 1
@@ -273,3 +377,28 @@ macro(add_custom_libcxx name prefix)
     DEPENDS ${LIBCXX_DEPS}
     )
 endmacro()
+
+function(rt_externalize_debuginfo name)
+  if(NOT COMPILER_RT_EXTERNALIZE_DEBUGINFO)
+    return()
+  endif()
+
+  if(NOT COMPILER_RT_EXTERNALIZE_DEBUGINFO_SKIP_STRIP)
+    set(strip_command COMMAND xcrun strip -Sl $<TARGET_FILE:${name}>)
+  endif()
+
+  if(APPLE)
+    if(CMAKE_CXX_FLAGS MATCHES "-flto"
+      OR CMAKE_CXX_FLAGS_${uppercase_CMAKE_BUILD_TYPE} MATCHES "-flto")
+
+      set(lto_object ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/${name}-lto.o)
+      set_property(TARGET ${name} APPEND_STRING PROPERTY
+        LINK_FLAGS " -Wl,-object_path_lto -Wl,${lto_object}")
+    endif()
+    add_custom_command(TARGET ${name} POST_BUILD
+      COMMAND xcrun dsymutil $<TARGET_FILE:${name}>
+      ${strip_command})
+  else()
+    message(FATAL_ERROR "COMPILER_RT_EXTERNALIZE_DEBUGINFO isn't implemented for non-darwin platforms!")
+  endif()
+endfunction()

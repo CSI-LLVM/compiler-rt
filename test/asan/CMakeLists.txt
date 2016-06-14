@@ -3,17 +3,39 @@ set(ASAN_LIT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(ASAN_TESTSUITES)
 set(ASAN_DYNAMIC_TESTSUITES)
 
+# TODO(wwchrome): Re-enable Win64 asan tests when ready.
+# Disable tests for asan Win64 temporarily.
+if(OS_NAME MATCHES "Windows" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(EXCLUDE_FROM_ALL TRUE)
+endif()
+
 macro(get_bits_for_arch arch bits)
   if (${arch} MATCHES "i386|i686|arm|mips|mipsel")
     set(${bits} 32)
-  elseif (${arch} MATCHES "x86_64|powerpc64|powerpc64le|aarch64|mips64|mips64el")
+  elseif (${arch} MATCHES "x86_64|powerpc64|powerpc64le|aarch64|mips64|mips64el|s390x")
     set(${bits} 64)
   else()
     message(FATAL_ERROR "Unknown target architecture: ${arch}")
   endif()
 endmacro()
 
-foreach(arch ${ASAN_SUPPORTED_ARCH})
+set(ASAN_TEST_DEPS ${SANITIZER_COMMON_LIT_TEST_DEPS})
+if(NOT COMPILER_RT_STANDALONE_BUILD)
+  list(APPEND ASAN_TEST_DEPS asan)
+  if(WIN32 AND COMPILER_RT_HAS_LLD_SOURCES)
+    list(APPEND ASAN_TEST_DEPS
+      lld
+    )
+  endif()
+endif()
+set(ASAN_DYNAMIC_TEST_DEPS ${ASAN_TEST_DEPS})
+
+set(ASAN_TEST_ARCH ${ASAN_SUPPORTED_ARCH})
+if(APPLE)
+  darwin_filter_host_archs(ASAN_SUPPORTED_ARCH ASAN_TEST_ARCH)
+endif()
+
+foreach(arch ${ASAN_TEST_ARCH})
   if(ANDROID)
     set(ASAN_TEST_TARGET_ARCH ${arch}-android)
   else()
@@ -55,12 +77,6 @@ foreach(arch ${ASAN_SUPPORTED_ARCH})
   endif()
 endforeach()
 
-set(ASAN_TEST_DEPS ${SANITIZER_COMMON_LIT_TEST_DEPS})
-if(NOT COMPILER_RT_STANDALONE_BUILD)
-  list(APPEND ASAN_TEST_DEPS asan)
-endif()
-set(ASAN_DYNAMIC_TEST_DEPS ${ASAN_TEST_DEPS})
-
 # Add unit tests.
 if(COMPILER_RT_INCLUDE_TESTS)
   set(ASAN_TEST_DYNAMIC False)
@@ -92,6 +108,7 @@ set_target_properties(check-asan PROPERTIES FOLDER "ASan tests")
 if(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME)
   # Add check-dynamic-asan target. It is a part of check-all only on Windows,
   # where we want to always test both dynamic and static runtime.
+
   if(NOT OS_NAME MATCHES "Windows")
     set(EXCLUDE_FROM_ALL TRUE)
   endif()
@@ -104,4 +121,9 @@ if(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME)
   if(NOT OS_NAME MATCHES "Windows")
     set(EXCLUDE_FROM_ALL FALSE)
   endif()
+endif()
+
+# TODO(wwchrome): Re-enable the tests for asan Win64 when ready.
+if(OS_NAME MATCHES "Windows" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(EXCLUDE_FROM_ALL FALSE)
 endif()

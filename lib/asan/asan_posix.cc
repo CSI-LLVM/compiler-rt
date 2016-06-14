@@ -33,17 +33,26 @@
 
 namespace __asan {
 
-void AsanOnSIGSEGV(int, void *siginfo, void *context) {
+void AsanOnDeadlySignal(int signo, void *siginfo, void *context) {
   ScopedDeadlySignal signal_scope(GetCurrentThread());
   int code = (int)((siginfo_t*)siginfo)->si_code;
-  // Write the first message using the bullet-proof write.
-  if (13 != internal_write(2, "ASAN:SIGSEGV\n", 13)) Die();
+  // Write the first message using fd=2, just in case.
+  // It may actually fail to write in case stderr is closed.
+  internal_write(2, "ASAN:DEADLYSIGNAL\n", 18);
   SignalContext sig = SignalContext::Create(siginfo, context);
 
   // Access at a reasonable offset above SP, or slightly below it (to account
   // for x86_64 or PowerPC redzone, ARM push of multiple registers, etc) is
   // probably a stack overflow.
+#ifdef __s390__
+  // On s390, the fault address in siginfo points to start of the page, not
+  // to the precise word that was accessed.  Mask off the low bits of sp to
+  // take it into account.
+  bool IsStackAccess = sig.addr >= (sig.sp & ~0xFFF) &&
+                       sig.addr < sig.sp + 0xFFFF;
+#else
   bool IsStackAccess = sig.addr + 512 > sig.sp && sig.addr < sig.sp + 0xFFFF;
+#endif
 
 #if __powerpc__
   // Large stack frames can be allocated with e.g.
@@ -75,8 +84,12 @@ void AsanOnSIGSEGV(int, void *siginfo, void *context) {
   // unaligned memory access.
   if (IsStackAccess && (code == si_SEGV_MAPERR || code == si_SEGV_ACCERR))
     ReportStackOverflow(sig);
+  else if (signo == SIGFPE)
+    ReportDeadlySignal("FPE", sig);
+  else if (signo == SIGILL)
+    ReportDeadlySignal("ILL", sig);
   else
-    ReportSIGSEGV("SEGV", sig);
+    ReportDeadlySignal("SEGV", sig);
 }
 
 // ---------------------- TSD ---------------- {{{1

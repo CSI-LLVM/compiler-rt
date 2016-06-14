@@ -15,7 +15,12 @@ macro(add_ubsan_testsuite test_mode sanitizer arch)
   endif()
 endmacro()
 
-foreach(arch ${UBSAN_SUPPORTED_ARCH})
+set(UBSAN_TEST_ARCH ${UBSAN_SUPPORTED_ARCH})
+if(APPLE)
+  darwin_filter_host_archs(UBSAN_SUPPORTED_ARCH UBSAN_TEST_ARCH)
+endif()
+
+foreach(arch ${UBSAN_TEST_ARCH})
   set(UBSAN_TEST_TARGET_ARCH ${arch})
   if(${arch} MATCHES "arm|aarch64")
     # This is only true if we're cross-compiling.
@@ -27,7 +32,11 @@ foreach(arch ${UBSAN_SUPPORTED_ARCH})
   add_ubsan_testsuite("Standalone" ubsan ${arch})
 
   if(COMPILER_RT_HAS_ASAN AND ";${ASAN_SUPPORTED_ARCH};" MATCHES ";${arch};")
-    add_ubsan_testsuite("AddressSanitizer" asan ${arch})
+    # TODO(wwchrome): Re-enable ubsan for asan win 64-bit when ready.
+    # Disable ubsan with AddressSanitizer tests for Windows 64-bit.
+    if(NOT OS_NAME MATCHES "Windows" OR CMAKE_SIZEOF_VOID_P EQUAL 4)
+      add_ubsan_testsuite("AddressSanitizer" asan ${arch})
+    endif()
   endif()
   if(COMPILER_RT_HAS_MSAN AND ";${MSAN_SUPPORTED_ARCH};" MATCHES ";${arch};")
     add_ubsan_testsuite("MemorySanitizer" msan ${arch})

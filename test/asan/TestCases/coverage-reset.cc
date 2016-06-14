@@ -1,7 +1,10 @@
 // Test __sanitizer_reset_coverage().
 
 // RUN: %clangxx_asan -fsanitize-coverage=func %s -o %t
-// RUN: env ASAN_OPTIONS=$ASAN_OPTIONS:coverage=1 %run %t
+// RUN: %env_asan_opts=coverage=1 %run %t
+
+// https://github.com/google/sanitizers/issues/618
+// UNSUPPORTED: android
 
 #include <sanitizer/coverage_interface.h>
 #include <stdio.h>
@@ -9,6 +12,13 @@
 static volatile int sink;
 __attribute__((noinline)) void bar() { sink = 2; }
 __attribute__((noinline)) void foo() { sink = 1; }
+
+// In MSVC 2015, printf is an inline function, which causes this test to fail as
+// it introduces an extra coverage point. Define away printf on that platform to
+// avoid the issue.
+#if _MSC_VER >= 1900
+# define printf(arg, ...)
+#endif
 
 #define GET_AND_PRINT_COVERAGE()                                       \
   bitset = 0;                                                  \
@@ -39,6 +49,7 @@ int main() {
   assert(IS_POWER_OF_TWO(bar_bit));
 
   __sanitizer_reset_coverage();
+  assert(__sanitizer_get_total_unique_coverage() == 0);
   GET_AND_PRINT_COVERAGE();
   assert(bitset == 0);
 

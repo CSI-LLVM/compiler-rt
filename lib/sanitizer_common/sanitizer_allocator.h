@@ -297,9 +297,10 @@ typedef void (*ForEachChunkCallback)(uptr chunk, void *arg);
 
 // SizeClassAllocator64 -- allocator for 64-bit address space.
 //
-// Space: a portion of address space of kSpaceSize bytes starting at
-// a fixed address (kSpaceBeg). Both constants are powers of two and
-// kSpaceBeg is kSpaceSize-aligned.
+// Space: a portion of address space of kSpaceSize bytes starting at SpaceBeg.
+// If kSpaceBeg is ~0 then SpaceBeg is chosen dynamically my mmap.
+// Otherwise SpaceBeg=kSpaceBeg (fixed address).
+// kSpaceSize is a power of two.
 // At the beginning the entire space is mprotect-ed, then small parts of it
 // are mapped on demand.
 //
@@ -322,9 +323,15 @@ class SizeClassAllocator64 {
   typedef SizeClassAllocatorLocalCache<ThisT> AllocatorCache;
 
   void Init() {
-    CHECK_EQ(kSpaceBeg,
-             reinterpret_cast<uptr>(MmapNoAccess(kSpaceBeg, kSpaceSize)));
-    MapWithCallback(kSpaceEnd, AdditionalSize());
+    if (kUsingConstantSpaceBeg) {
+      CHECK_EQ(kSpaceBeg, reinterpret_cast<uptr>(
+                              MmapFixedNoAccess(kSpaceBeg, kSpaceSize)));
+    } else {
+      NonConstSpaceBeg =
+          reinterpret_cast<uptr>(MmapNoAccess(kSpaceSize + AdditionalSize()));
+      CHECK_NE(NonConstSpaceBeg, ~(uptr)0);
+    }
+    MapWithCallback(SpaceEnd(), AdditionalSize());
   }
 
   void MapWithCallback(uptr beg, uptr size) {
@@ -347,7 +354,7 @@ class SizeClassAllocator64 {
     CHECK_LT(class_id, kNumClasses);
     RegionInfo *region = GetRegionInfo(class_id);
     Batch *b = region->free_list.Pop();
-    if (b == 0)
+    if (!b)
       b = PopulateFreeList(stat, c, class_id, region);
     region->n_allocated += b->count;
     return b;
@@ -360,30 +367,36 @@ class SizeClassAllocator64 {
     region->n_freed += b->count;
   }
 
-  static bool PointerIsMine(const void *p) {
-    return reinterpret_cast<uptr>(p) / kSpaceSize == kSpaceBeg / kSpaceSize;
+  bool PointerIsMine(const void *p) {
+    uptr P = reinterpret_cast<uptr>(p);
+    if (kUsingConstantSpaceBeg && (kSpaceBeg % kSpaceSize) == 0)
+      return P / kSpaceSize == kSpaceBeg / kSpaceSize;
+    return P >= SpaceBeg() && P < SpaceEnd();
   }
 
-  static uptr GetSizeClass(const void *p) {
-    return (reinterpret_cast<uptr>(p) / kRegionSize) % kNumClassesRounded;
+  uptr GetSizeClass(const void *p) {
+    if (kUsingConstantSpaceBeg && (kSpaceBeg % kSpaceSize) == 0)
+      return ((reinterpret_cast<uptr>(p)) / kRegionSize) % kNumClassesRounded;
+    return ((reinterpret_cast<uptr>(p) - SpaceBeg()) / kRegionSize) %
+           kNumClassesRounded;
   }
 
   void *GetBlockBegin(const void *p) {
     uptr class_id = GetSizeClass(p);
     uptr size = SizeClassMap::Size(class_id);
-    if (!size) return 0;
+    if (!size) return nullptr;
     uptr chunk_idx = GetChunkIdx((uptr)p, size);
     uptr reg_beg = (uptr)p & ~(kRegionSize - 1);
     uptr beg = chunk_idx * size;
     uptr next_beg = beg + size;
-    if (class_id >= kNumClasses) return 0;
+    if (class_id >= kNumClasses) return nullptr;
     RegionInfo *region = GetRegionInfo(class_id);
     if (region->mapped_user >= next_beg)
       return reinterpret_cast<void*>(reg_beg + beg);
-    return 0;
+    return nullptr;
   }
 
-  static uptr GetActuallyAllocatedSize(void *p) {
+  uptr GetActuallyAllocatedSize(void *p) {
     CHECK(PointerIsMine(p));
     return SizeClassMap::Size(GetSizeClass(p));
   }
@@ -394,8 +407,9 @@ class SizeClassAllocator64 {
     uptr class_id = GetSizeClass(p);
     uptr size = SizeClassMap::Size(class_id);
     uptr chunk_idx = GetChunkIdx(reinterpret_cast<uptr>(p), size);
-    return reinterpret_cast<void*>(kSpaceBeg + (kRegionSize * (class_id + 1)) -
-                                   (1 + chunk_idx) * kMetadataSize);
+    return reinterpret_cast<void *>(SpaceBeg() +
+                                    (kRegionSize * (class_id + 1)) -
+                                    (1 + chunk_idx) * kMetadataSize);
   }
 
   uptr TotalMemoryUsed() {
@@ -407,7 +421,7 @@ class SizeClassAllocator64 {
 
   // Test-only.
   void TestOnlyUnmap() {
-    UnmapWithCallback(kSpaceBeg, kSpaceSize + AdditionalSize());
+    UnmapWithCallback(SpaceBeg(), kSpaceSize + AdditionalSize());
   }
 
   void PrintStats() {
@@ -455,7 +469,7 @@ class SizeClassAllocator64 {
     for (uptr class_id = 1; class_id < kNumClasses; class_id++) {
       RegionInfo *region = GetRegionInfo(class_id);
       uptr chunk_size = SizeClassMap::Size(class_id);
-      uptr region_beg = kSpaceBeg + class_id * kRegionSize;
+      uptr region_beg = SpaceBeg() + class_id * kRegionSize;
       for (uptr chunk = region_beg;
            chunk < region_beg + region->allocated_user;
            chunk += chunk_size) {
@@ -476,8 +490,13 @@ class SizeClassAllocator64 {
 
  private:
   static const uptr kRegionSize = kSpaceSize / kNumClassesRounded;
-  static const uptr kSpaceEnd = kSpaceBeg + kSpaceSize;
-  COMPILER_CHECK(kSpaceBeg % kSpaceSize == 0);
+
+  static const bool kUsingConstantSpaceBeg = kSpaceBeg != ~(uptr)0;
+  uptr NonConstSpaceBeg;
+  uptr SpaceBeg() const {
+    return kUsingConstantSpaceBeg ? kSpaceBeg : NonConstSpaceBeg;
+  }
+  uptr SpaceEnd() const { return  SpaceBeg() + kSpaceSize; }
   // kRegionSize must be >= 2^32.
   COMPILER_CHECK((kRegionSize) >= (1ULL << (SANITIZER_WORDSIZE / 2)));
   // Populate the free list with at most this number of bytes at once
@@ -501,7 +520,8 @@ class SizeClassAllocator64 {
 
   RegionInfo *GetRegionInfo(uptr class_id) {
     CHECK_LT(class_id, kNumClasses);
-    RegionInfo *regions = reinterpret_cast<RegionInfo*>(kSpaceBeg + kSpaceSize);
+    RegionInfo *regions =
+        reinterpret_cast<RegionInfo *>(SpaceBeg() + kSpaceSize);
     return &regions[class_id];
   }
 
@@ -524,7 +544,7 @@ class SizeClassAllocator64 {
     uptr count = size < kPopulateSize ? SizeClassMap::MaxCached(class_id) : 1;
     uptr beg_idx = region->allocated_user;
     uptr end_idx = beg_idx + count * size;
-    uptr region_beg = kSpaceBeg + kRegionSize * class_id;
+    uptr region_beg = SpaceBeg() + kRegionSize * class_id;
     if (end_idx + size > region->mapped_user) {
       // Do the mmap for the user memory.
       uptr map_size = kUserMapSize;
@@ -609,6 +629,7 @@ class TwoLevelByteMap {
     internal_memset(map1_, 0, sizeof(map1_));
     mu_.Init();
   }
+
   void TestOnlyUnmap() {
     for (uptr i = 0; i < kSize1; i++) {
       u8 *p = Get(i);
@@ -748,6 +769,9 @@ class SizeClassAllocator32 {
   }
 
   bool PointerIsMine(const void *p) {
+    uptr mem = reinterpret_cast<uptr>(p);
+    if (mem < kSpaceBeg || mem >= kSpaceBeg + kSpaceSize)
+      return false;
     return GetSizeClass(p) != 0;
   }
 
@@ -822,6 +846,10 @@ class SizeClassAllocator32 {
   void PrintStats() {
   }
 
+  static uptr AdditionalSize() {
+    return 0;
+  }
+
   typedef SizeClassMap SizeClassMapT;
   static const uptr kNumClasses = SizeClassMap::kNumClasses;
 
@@ -868,9 +896,9 @@ class SizeClassAllocator32 {
     uptr reg = AllocateRegion(stat, class_id);
     uptr n_chunks = kRegionSize / (size + kMetadataSize);
     uptr max_count = SizeClassMap::MaxCached(class_id);
-    Batch *b = 0;
+    Batch *b = nullptr;
     for (uptr i = reg; i < reg + n_chunks * size; i += size) {
-      if (b == 0) {
+      if (!b) {
         if (SizeClassMap::SizeClassRequiresSeparateTransferBatch(class_id))
           b = (Batch*)c->Allocate(this, SizeClassMap::ClassID(sizeof(Batch)));
         else
@@ -881,7 +909,7 @@ class SizeClassAllocator32 {
       if (b->count == max_count) {
         CHECK_GT(b->count, 0);
         sci->free_list.push_back(b);
-        b = 0;
+        b = nullptr;
       }
     }
     if (b) {
@@ -1061,7 +1089,7 @@ class LargeMmapAllocator {
 
   void *ReturnNullOrDie() {
     if (atomic_load(&may_return_null_, memory_order_acquire))
-      return 0;
+      return nullptr;
     ReportAllocatorCannotReturnNull();
   }
 
@@ -1101,7 +1129,7 @@ class LargeMmapAllocator {
   }
 
   bool PointerIsMine(const void *p) {
-    return GetBlockBegin(p) != 0;
+    return GetBlockBegin(p) != nullptr;
   }
 
   uptr GetActuallyAllocatedSize(void *p) {
@@ -1130,13 +1158,13 @@ class LargeMmapAllocator {
         nearest_chunk = ch;
     }
     if (!nearest_chunk)
-      return 0;
+      return nullptr;
     Header *h = reinterpret_cast<Header *>(nearest_chunk);
     CHECK_GE(nearest_chunk, h->map_beg);
     CHECK_LT(nearest_chunk, h->map_beg + h->map_size);
     CHECK_LE(nearest_chunk, p);
     if (h->map_beg + h->map_size <= p)
-      return 0;
+      return nullptr;
     return GetUser(h);
   }
 
@@ -1146,7 +1174,7 @@ class LargeMmapAllocator {
     mutex_.CheckLocked();
     uptr p = reinterpret_cast<uptr>(ptr);
     uptr n = n_chunks_;
-    if (!n) return 0;
+    if (!n) return nullptr;
     if (!chunks_sorted_) {
       // Do one-time sort. chunks_sorted_ is reset in Allocate/Deallocate.
       SortArray(reinterpret_cast<uptr*>(chunks_), n);
@@ -1158,7 +1186,7 @@ class LargeMmapAllocator {
           chunks_[n - 1]->map_size;
     }
     if (p < min_mmap_ || p >= max_mmap_)
-      return 0;
+      return nullptr;
     uptr beg = 0, end = n - 1;
     // This loop is a log(n) lower_bound. It does not check for the exact match
     // to avoid expensive cache-thrashing loads.
@@ -1179,7 +1207,7 @@ class LargeMmapAllocator {
 
     Header *h = chunks_[beg];
     if (h->map_beg + h->map_size <= p || p < h->map_beg)
-      return 0;
+      return nullptr;
     return GetUser(h);
   }
 
@@ -1308,7 +1336,7 @@ class CombinedAllocator {
 
   void *ReturnNullOrDie() {
     if (MayReturnNull())
-      return 0;
+      return nullptr;
     ReportAllocatorCannotReturnNull();
   }
 
@@ -1340,7 +1368,7 @@ class CombinedAllocator {
       return Allocate(cache, new_size, alignment);
     if (!new_size) {
       Deallocate(cache, p);
-      return 0;
+      return nullptr;
     }
     CHECK(PointerIsMine(p));
     uptr old_size = GetActuallyAllocatedSize(p);
@@ -1445,7 +1473,6 @@ class CombinedAllocator {
 // Returns true if calloc(size, n) should return 0 due to overflow in size*n.
 bool CallocShouldReturnNullDueToOverflow(uptr size, uptr n);
 
-}  // namespace __sanitizer
+} // namespace __sanitizer
 
-#endif  // SANITIZER_ALLOCATOR_H
-
+#endif // SANITIZER_ALLOCATOR_H

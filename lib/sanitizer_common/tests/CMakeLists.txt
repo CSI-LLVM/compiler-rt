@@ -4,6 +4,9 @@ clang_compiler_add_cxx_check()
 
 # FIXME: use SANITIZER_COMMON_SUPPORTED_ARCH here
 filter_available_targets(SANITIZER_UNITTEST_SUPPORTED_ARCH x86_64 i386 mips64 mips64el)
+if(APPLE)
+  darwin_filter_host_archs(SANITIZER_UNITTEST_SUPPORTED_ARCH SANITIZER_COMMON_SUPPORTED_ARCH)
+endif()
 
 set(SANITIZER_UNITTESTS
   sanitizer_allocator_test.cc
@@ -41,7 +44,7 @@ foreach(header ${SANITIZER_HEADERS})
 endforeach()
 
 set(SANITIZER_TEST_CFLAGS_COMMON
-  ${COMPILER_RT_TEST_CFLAGS}
+  ${COMPILER_RT_UNITTEST_CFLAGS}
   ${COMPILER_RT_GTEST_CFLAGS}
   -I${COMPILER_RT_SOURCE_DIR}/include
   -I${COMPILER_RT_SOURCE_DIR}/lib
@@ -103,10 +106,15 @@ function(get_sanitizer_common_lib_for_arch arch lib lib_name)
     set(tgt_name "RTSanitizerCommon.test.${arch}")
   endif()
   set(${lib} "${tgt_name}" PARENT_SCOPE)
-  if(NOT MSVC)
-    set(${lib_name} "lib${tgt_name}.a" PARENT_SCOPE)
+  if(CMAKE_CONFIGURATION_TYPES)
+   set(configuration_path "${CMAKE_CFG_INTDIR}/")
   else()
-    set(${lib_name} "${tgt_name}.lib" PARENT_SCOPE)
+   set(configuration_path "")
+  endif()
+  if(NOT MSVC)
+    set(${lib_name} "${configuration_path}lib${tgt_name}.a" PARENT_SCOPE)
+  else()
+    set(${lib_name} "${configuration_path}${tgt_name}.lib" PARENT_SCOPE)
   endif()
 endfunction()
 
@@ -127,7 +135,11 @@ macro(add_sanitizer_tests_for_arch arch)
   set(SANITIZER_TEST_OBJECTS)
   foreach(source ${SANITIZER_TEST_SOURCES})
     get_filename_component(basename ${source} NAME)
-    set(output_obj "${basename}.${arch}.o")
+    if(CMAKE_CONFIGURATION_TYPES)
+      set(output_obj "${CMAKE_CFG_INTDIR}/${basename}.${arch}.o")
+    else()
+      set(output_obj "${basename}.${arch}.o")
+    endif()
     clang_compile(${output_obj} ${source}
                   CFLAGS ${SANITIZER_TEST_CFLAGS_COMMON} ${TARGET_FLAGS}
                   DEPS ${SANITIZER_TEST_COMPILE_DEPS})
@@ -168,7 +180,8 @@ if(COMPILER_RT_CAN_EXECUTE_TESTS AND NOT ANDROID)
   # be sure that produced binaries would work.
   if(APPLE)
     add_sanitizer_common_lib("RTSanitizerCommon.test.osx"
-                             $<TARGET_OBJECTS:RTSanitizerCommon.osx>)
+                             $<TARGET_OBJECTS:RTSanitizerCommon.osx>
+                             $<TARGET_OBJECTS:RTSanitizerCommonLibc.osx>)
   else()
     if(CAN_TARGET_x86_64)
       add_sanitizer_common_lib("RTSanitizerCommon.test.nolibc.x86_64"

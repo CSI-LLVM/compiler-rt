@@ -105,39 +105,24 @@ uptr stoptheworld_tracer_pid = 0;
 // writing to the same log file.
 uptr stoptheworld_tracer_ppid = 0;
 
-static DieCallbackType InternalDieCallback, UserDieCallback;
-void SetDieCallback(DieCallbackType callback) {
-  InternalDieCallback = callback;
-}
-void SetUserDieCallback(DieCallbackType callback) {
-  UserDieCallback = callback;
-}
-
-DieCallbackType GetDieCallback() {
-  return InternalDieCallback;
-}
-
-void NORETURN Die() {
-  if (UserDieCallback)
-    UserDieCallback();
-  if (InternalDieCallback)
-    InternalDieCallback();
-  internal__exit(1);
-}
-
-static CheckFailedCallbackType CheckFailedCallback;
-void SetCheckFailedCallback(CheckFailedCallbackType callback) {
-  CheckFailedCallback = callback;
-}
-
-void NORETURN CheckFailed(const char *file, int line, const char *cond,
-                          u64 v1, u64 v2) {
-  if (CheckFailedCallback) {
-    CheckFailedCallback(file, line, cond, v1, v2);
+void NORETURN ReportMmapFailureAndDie(uptr size, const char *mem_type,
+                                      const char *mmap_type, error_t err,
+                                      bool raw_report) {
+  static int recursion_count;
+  if (raw_report || recursion_count) {
+    // If raw report is requested or we went into recursion, just die.
+    // The Report() and CHECK calls below may call mmap recursively and fail.
+    RawWrite("ERROR: Failed to mmap\n");
+    Die();
   }
-  Report("Sanitizer CHECK failed: %s:%d %s (%lld, %lld)\n", file, line, cond,
-                                                            v1, v2);
-  Die();
+  recursion_count++;
+  Report("ERROR: %s failed to "
+         "%s 0x%zx (%zd) bytes of %s (error code: %d)\n",
+         SanitizerToolName, mmap_type, size, size, mem_type, err);
+#ifndef SANITIZER_GO
+  DumpProcessMap();
+#endif
+  UNREACHABLE("unable to mmap");
 }
 
 bool ReadFileToBuffer(const char *file_name, char **buff, uptr *buff_size,
@@ -187,31 +172,10 @@ void SortArray(uptr *array, uptr size) {
   InternalSort<uptr*, UptrComparisonFunction>(&array, size, CompareLess);
 }
 
-// We want to map a chunk of address space aligned to 'alignment'.
-// We do it by maping a bit more and then unmaping redundant pieces.
-// We probably can do it with fewer syscalls in some OS-dependent way.
-void *MmapAlignedOrDie(uptr size, uptr alignment, const char *mem_type) {
-// uptr PageSize = GetPageSizeCached();
-  CHECK(IsPowerOfTwo(size));
-  CHECK(IsPowerOfTwo(alignment));
-  uptr map_size = size + alignment;
-  uptr map_res = (uptr)MmapOrDie(map_size, mem_type);
-  uptr map_end = map_res + map_size;
-  uptr res = map_res;
-  if (res & (alignment - 1))  // Not aligned.
-    res = (map_res + alignment) & ~(alignment - 1);
-  uptr end = res + size;
-  if (res != map_res)
-    UnmapOrDie((void*)map_res, res - map_res);
-  if (end != map_end)
-    UnmapOrDie((void*)end, map_end - end);
-  return (void*)res;
-}
-
 const char *StripPathPrefix(const char *filepath,
                             const char *strip_path_prefix) {
-  if (filepath == 0) return 0;
-  if (strip_path_prefix == 0) return filepath;
+  if (!filepath) return nullptr;
+  if (!strip_path_prefix) return filepath;
   const char *res = filepath;
   if (const char *pos = internal_strstr(filepath, strip_path_prefix))
     res = pos + internal_strlen(strip_path_prefix);
@@ -221,8 +185,8 @@ const char *StripPathPrefix(const char *filepath,
 }
 
 const char *StripModuleName(const char *module) {
-  if (module == 0)
-    return 0;
+  if (!module)
+    return nullptr;
   if (SANITIZER_WINDOWS) {
     // On Windows, both slash and backslash are possible.
     // Pick the one that goes last.
@@ -255,6 +219,40 @@ void ReportErrorSummary(const char *error_type, const AddressInfo &info) {
 }
 #endif
 
+// Removes the ANSI escape sequences from the input string (in-place).
+void RemoveANSIEscapeSequencesFromString(char *str) {
+  if (!str)
+    return;
+
+  // We are going to remove the escape sequences in place.
+  char *s = str;
+  char *z = str;
+  while (*s != '\0') {
+    CHECK_GE(s, z);
+    // Skip over ANSI escape sequences with pointer 's'.
+    if (*s == '\033' && *(s + 1) == '[') {
+      s = internal_strchrnul(s, 'm');
+      if (*s == '\0') {
+        break;
+      }
+      s++;
+      continue;
+    }
+    // 's' now points at a character we want to keep. Copy over the buffer
+    // content if the escape sequence has been perviously skipped andadvance
+    // both pointers.
+    if (s != z)
+      *z = *s;
+
+    // If we have not seen an escape sequence, just advance both pointers.
+    z++;
+    s++;
+  }
+
+  // Null terminate the string.
+  *z = '\0';
+}
+
 void LoadedModule::set(const char *module_name, uptr base_address) {
   clear();
   full_name_ = internal_strdup(module_name);
@@ -278,9 +276,8 @@ void LoadedModule::addAddressRange(uptr beg, uptr end, bool executable) {
 }
 
 bool LoadedModule::containsAddress(uptr address) const {
-  for (Iterator iter = ranges(); iter.hasNext();) {
-    const AddressRange *r = iter.next();
-    if (r->beg <= address && address < r->end)
+  for (const AddressRange &r : ranges()) {
+    if (r.beg <= address && address < r.end)
       return true;
   }
   return false;
@@ -303,7 +300,7 @@ void DecreaseTotalMmap(uptr size) {
 }
 
 bool TemplateMatch(const char *templ, const char *str) {
-  if (str == 0 || str[0] == 0)
+  if ((!str) || str[0] == 0)
     return false;
   bool start = false;
   if (templ && templ[0] == '^') {
@@ -324,9 +321,9 @@ bool TemplateMatch(const char *templ, const char *str) {
       return false;
     char *tpos = (char*)internal_strchr(templ, '*');
     char *tpos1 = (char*)internal_strchr(templ, '$');
-    if (tpos == 0 || (tpos1 && tpos1 < tpos))
+    if ((!tpos) || (tpos1 && tpos1 < tpos))
       tpos = tpos1;
-    if (tpos != 0)
+    if (tpos)
       tpos[0] = 0;
     const char *str0 = str;
     const char *spos = internal_strstr(str, templ);
@@ -334,7 +331,7 @@ bool TemplateMatch(const char *templ, const char *str) {
     templ = tpos;
     if (tpos)
       tpos[0] = tpos == tpos1 ? '$' : '*';
-    if (spos == 0)
+    if (!spos)
       return false;
     if (start && spos != str0)
       return false;
@@ -342,6 +339,36 @@ bool TemplateMatch(const char *templ, const char *str) {
     asterisk = false;
   }
   return true;
+}
+
+static const char kPathSeparator = SANITIZER_WINDOWS ? ';' : ':';
+
+char *FindPathToBinary(const char *name) {
+  if (FileExists(name)) {
+    return internal_strdup(name);
+  }
+
+  const char *path = GetEnv("PATH");
+  if (!path)
+    return nullptr;
+  uptr name_len = internal_strlen(name);
+  InternalScopedBuffer<char> buffer(kMaxPathLength);
+  const char *beg = path;
+  while (true) {
+    const char *end = internal_strchrnul(beg, kPathSeparator);
+    uptr prefix_len = end - beg;
+    if (prefix_len + name_len + 2 <= kMaxPathLength) {
+      internal_memcpy(buffer.data(), beg, prefix_len);
+      buffer[prefix_len] = '/';
+      internal_memcpy(&buffer[prefix_len + 1], name, name_len);
+      buffer[prefix_len + 1 + name_len] = '\0';
+      if (FileExists(buffer.data()))
+        return internal_strdup(buffer.data());
+    }
+    if (*end == '\0') break;
+    beg = end + 1;
+  }
+  return nullptr;
 }
 
 static char binary_name_cache_str[kMaxPathLength];
@@ -385,13 +412,27 @@ uptr ReadBinaryNameCached(/*out*/char *buf, uptr buf_len) {
   return name_len;
 }
 
-}  // namespace __sanitizer
+void PrintCmdline() {
+  char **argv = GetArgv();
+  if (!argv) return;
+  Printf("\nCommand: ");
+  for (uptr i = 0; argv[i]; ++i)
+    Printf("%s ", argv[i]);
+  Printf("\n\n");
+}
+
+} // namespace __sanitizer
 
 using namespace __sanitizer;  // NOLINT
 
 extern "C" {
 void __sanitizer_set_report_path(const char *path) {
   report_file.SetReportPath(path);
+}
+
+void __sanitizer_set_report_fd(void *fd) {
+  report_file.fd = (fd_t)reinterpret_cast<uptr>(fd);
+  report_file.fd_pid = internal_getpid();
 }
 
 void __sanitizer_report_error_summary(const char *error_summary) {
@@ -402,4 +443,4 @@ SANITIZER_INTERFACE_ATTRIBUTE
 void __sanitizer_set_death_callback(void (*callback)(void)) {
   SetUserDieCallback(callback);
 }
-}  // extern "C"
+} // extern "C"

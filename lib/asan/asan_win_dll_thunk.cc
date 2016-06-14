@@ -12,8 +12,7 @@
 // This file defines a family of thunks that should be statically linked into
 // the DLLs that have ASan instrumentation in order to delegate the calls to the
 // shared runtime that lives in the main binary.
-// See https://code.google.com/p/address-sanitizer/issues/detail?id=209 for the
-// details.
+// See https://github.com/google/sanitizers/issues/209 for the details.
 //===----------------------------------------------------------------------===//
 
 // Only compile this code when buidling asan_dll_thunk.lib
@@ -30,8 +29,9 @@ void *__stdcall GetProcAddress(void *module, const char *proc_name);
 void abort();
 }
 
-static void *getRealProcAddressOrDie(const char *name) {
-  void *ret = GetProcAddress(GetModuleHandleA(0), name);
+static uptr getRealProcAddressOrDie(const char *name) {
+  uptr ret =
+      __interception::InternalGetProcAddress((void *)GetModuleHandleA(0), name);
   if (!ret)
     abort();
   return ret;
@@ -62,13 +62,12 @@ struct FunctionInterceptor<0> {
 };
 
 #define INTERCEPT_WHEN_POSSIBLE(main_function, dll_function)                   \
-  template<> struct FunctionInterceptor<__LINE__> {                            \
+  template <> struct FunctionInterceptor<__LINE__> {                           \
     static void Execute() {                                                    \
-      void *wrapper = getRealProcAddressOrDie(main_function);                  \
-      if (!__interception::OverrideFunction((uptr)dll_function,                \
-                                            (uptr)wrapper, 0))                 \
+      uptr wrapper = getRealProcAddressOrDie(main_function);                   \
+      if (!__interception::OverrideFunction((uptr)dll_function, wrapper, 0))   \
         abort();                                                               \
-      FunctionInterceptor<__LINE__-1>::Execute();                              \
+      FunctionInterceptor<__LINE__ - 1>::Execute();                            \
     }                                                                          \
   };
 
@@ -257,6 +256,9 @@ INTERFACE_FUNCTION(__asan_memcpy);
 INTERFACE_FUNCTION(__asan_memset);
 INTERFACE_FUNCTION(__asan_memmove);
 
+INTERFACE_FUNCTION(__asan_alloca_poison);
+INTERFACE_FUNCTION(__asan_allocas_unpoison);
+
 INTERFACE_FUNCTION(__asan_register_globals)
 INTERFACE_FUNCTION(__asan_unregister_globals)
 
@@ -300,6 +302,7 @@ INTERFACE_FUNCTION(__asan_stack_free_10)
 
 // FIXME: we might want to have a sanitizer_win_dll_thunk?
 INTERFACE_FUNCTION(__sanitizer_annotate_contiguous_container)
+INTERFACE_FUNCTION(__sanitizer_contiguous_container_find_bad_address)
 INTERFACE_FUNCTION(__sanitizer_cov)
 INTERFACE_FUNCTION(__sanitizer_cov_dump)
 INTERFACE_FUNCTION(__sanitizer_cov_indir_call16)
@@ -308,14 +311,17 @@ INTERFACE_FUNCTION(__sanitizer_cov_module_init)
 INTERFACE_FUNCTION(__sanitizer_cov_trace_basic_block)
 INTERFACE_FUNCTION(__sanitizer_cov_trace_func_enter)
 INTERFACE_FUNCTION(__sanitizer_cov_trace_cmp)
+INTERFACE_FUNCTION(__sanitizer_cov_trace_switch)
 INTERFACE_FUNCTION(__sanitizer_cov_with_check)
 INTERFACE_FUNCTION(__sanitizer_get_allocated_size)
 INTERFACE_FUNCTION(__sanitizer_get_coverage_guards)
+INTERFACE_FUNCTION(__sanitizer_get_coverage_pc_buffer)
 INTERFACE_FUNCTION(__sanitizer_get_current_allocated_bytes)
 INTERFACE_FUNCTION(__sanitizer_get_estimated_allocated_size)
 INTERFACE_FUNCTION(__sanitizer_get_free_bytes)
 INTERFACE_FUNCTION(__sanitizer_get_heap_size)
 INTERFACE_FUNCTION(__sanitizer_get_ownership)
+INTERFACE_FUNCTION(__sanitizer_get_total_unique_caller_callee_pairs)
 INTERFACE_FUNCTION(__sanitizer_get_total_unique_coverage)
 INTERFACE_FUNCTION(__sanitizer_get_unmapped_bytes)
 INTERFACE_FUNCTION(__sanitizer_maybe_open_cov_file)
@@ -329,6 +335,7 @@ INTERFACE_FUNCTION(__sanitizer_update_counter_bitset_and_clear_counters)
 INTERFACE_FUNCTION(__sanitizer_sandbox_on_notify)
 INTERFACE_FUNCTION(__sanitizer_set_death_callback)
 INTERFACE_FUNCTION(__sanitizer_set_report_path)
+INTERFACE_FUNCTION(__sanitizer_set_report_fd)
 INTERFACE_FUNCTION(__sanitizer_unaligned_load16)
 INTERFACE_FUNCTION(__sanitizer_unaligned_load32)
 INTERFACE_FUNCTION(__sanitizer_unaligned_load64)
@@ -341,16 +348,20 @@ INTERFACE_FUNCTION(__sanitizer_verify_contiguous_container)
 
 // ----------------- Memory allocation functions ---------------------
 WRAP_V_W(free)
+WRAP_V_W(_free_base)
 WRAP_V_WW(_free_dbg)
 
 WRAP_W_W(malloc)
+WRAP_W_W(_malloc_base)
 WRAP_W_WWWW(_malloc_dbg)
 
 WRAP_W_WW(calloc)
+WRAP_W_WW(_calloc_base)
 WRAP_W_WWWWW(_calloc_dbg)
 WRAP_W_WWW(_calloc_impl)
 
 WRAP_W_WW(realloc)
+WRAP_W_WW(_realloc_base)
 WRAP_W_WWW(_realloc_dbg)
 WRAP_W_WWW(_recalloc)
 
@@ -386,12 +397,14 @@ INTERCEPT_LIBRARY_FUNCTION(strchr);
 INTERCEPT_LIBRARY_FUNCTION(strcmp);
 INTERCEPT_LIBRARY_FUNCTION(strcpy);  // NOLINT
 INTERCEPT_LIBRARY_FUNCTION(strcspn);
+INTERCEPT_LIBRARY_FUNCTION(strdup);
 INTERCEPT_LIBRARY_FUNCTION(strlen);
 INTERCEPT_LIBRARY_FUNCTION(strncat);
 INTERCEPT_LIBRARY_FUNCTION(strncmp);
 INTERCEPT_LIBRARY_FUNCTION(strncpy);
 INTERCEPT_LIBRARY_FUNCTION(strnlen);
 INTERCEPT_LIBRARY_FUNCTION(strpbrk);
+INTERCEPT_LIBRARY_FUNCTION(strrchr);
 INTERCEPT_LIBRARY_FUNCTION(strspn);
 INTERCEPT_LIBRARY_FUNCTION(strstr);
 INTERCEPT_LIBRARY_FUNCTION(strtol);

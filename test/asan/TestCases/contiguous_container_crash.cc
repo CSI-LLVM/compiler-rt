@@ -2,7 +2,7 @@
 // RUN: not %run %t crash 2>&1 | FileCheck --check-prefix=CHECK-CRASH %s
 // RUN: not %run %t bad-bounds 2>&1 | FileCheck --check-prefix=CHECK-BAD-BOUNDS %s
 // RUN: not %run %t bad-alignment 2>&1 | FileCheck --check-prefix=CHECK-BAD-ALIGNMENT %s
-// RUN: env ASAN_OPTIONS=$ASAN_OPTIONS:detect_container_overflow=0 %run %t crash
+// RUN: %env_asan_opts=detect_container_overflow=0 %run %t crash
 //
 // Test crash due to __sanitizer_annotate_contiguous_container.
 
@@ -23,6 +23,7 @@ int TestCrash() {
   __sanitizer_annotate_contiguous_container(&t[0], &t[0] + 100, &t[0] + 100,
                                             &t[0] + 50);
 // CHECK-CRASH: AddressSanitizer: container-overflow
+// CHECK-CRASH: if you don't care about these errors you may set ASAN_OPTIONS=detect_container_overflow=0
   return (int)t[60 * one];  // Touches the poisoned memory.
 }
 

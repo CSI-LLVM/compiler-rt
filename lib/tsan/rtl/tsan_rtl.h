@@ -54,7 +54,7 @@ namespace __tsan {
 
 #ifndef SANITIZER_GO
 struct MapUnmapCallback;
-#ifdef __mips64
+#if defined(__mips64) || defined(__aarch64__) || defined(__powerpc__)
 static const uptr kAllocatorSpace = 0;
 static const uptr kAllocatorSize = SANITIZER_MMAP_RANGE_SIZE;
 static const uptr kAllocatorRegionSizeLog = 20;
@@ -66,7 +66,8 @@ typedef SizeClassAllocator32<kAllocatorSpace, kAllocatorSize, 0,
     CompactSizeClassMap, kAllocatorRegionSizeLog, ByteMap,
     MapUnmapCallback> PrimaryAllocator;
 #else
-typedef SizeClassAllocator64<kHeapMemBeg, kHeapMemEnd - kHeapMemBeg, 0,
+typedef SizeClassAllocator64<Mapping::kHeapMemBeg,
+    Mapping::kHeapMemEnd - Mapping::kHeapMemBeg, 0,
     DefaultSizeClassMap, MapUnmapCallback> PrimaryAllocator;
 #endif
 typedef SizeClassAllocatorLocalCache<PrimaryAllocator> AllocatorCache;
@@ -324,6 +325,36 @@ struct JmpBuf {
   uptr *shadow_stack_pos;
 };
 
+// A Processor represents a physical thread, or a P for Go.
+// It is used to store internal resources like allocate cache, and does not
+// participate in race-detection logic (invisible to end user).
+// In C++ it is tied to an OS thread just like ThreadState, however ideally
+// it should be tied to a CPU (this way we will have fewer allocator caches).
+// In Go it is tied to a P, so there are significantly fewer Processor's than
+// ThreadState's (which are tied to Gs).
+// A ThreadState must be wired with a Processor to handle events.
+struct Processor {
+  ThreadState *thr; // currently wired thread, or nullptr
+#ifndef SANITIZER_GO
+  AllocatorCache alloc_cache;
+  InternalAllocatorCache internal_alloc_cache;
+#endif
+  DenseSlabAllocCache block_cache;
+  DenseSlabAllocCache sync_cache;
+  DenseSlabAllocCache clock_cache;
+  DDPhysicalThread *dd_pt;
+};
+
+#ifndef SANITIZER_GO
+// ScopedGlobalProcessor temporary setups a global processor for the current
+// thread, if it does not have one. Intended for interceptors that can run
+// at the very thread end, when we already destroyed the thread processor.
+struct ScopedGlobalProcessor {
+  ScopedGlobalProcessor();
+  ~ScopedGlobalProcessor();
+};
+#endif
+
 // This struct is stored in TLS.
 struct ThreadState {
   FastState fast_state;
@@ -359,8 +390,6 @@ struct ThreadState {
   MutexSet mset;
   ThreadClock clock;
 #ifndef SANITIZER_GO
-  AllocatorCache alloc_cache;
-  InternalAllocatorCache internal_alloc_cache;
   Vector<JmpBuf> jmp_bufs;
   int ignore_interceptors;
 #endif
@@ -384,15 +413,18 @@ struct ThreadState {
 #if SANITIZER_DEBUG && !SANITIZER_GO
   InternalDeadlockDetector internal_deadlock_detector;
 #endif
-  DDPhysicalThread *dd_pt;
   DDLogicalThread *dd_lt;
+
+  // Current wired Processor, or nullptr. Required to handle any events.
+  Processor *proc1;
+#ifndef SANITIZER_GO
+  Processor *proc() { return proc1; }
+#else
+  Processor *proc();
+#endif
 
   atomic_uintptr_t in_signal_handler;
   ThreadSignalContext *signal_ctx;
-
-  DenseSlabAllocCache block_cache;
-  DenseSlabAllocCache sync_cache;
-  DenseSlabAllocCache clock_cache;
 
 #ifndef SANITIZER_GO
   u32 last_sleep_stack_id;
@@ -403,6 +435,8 @@ struct ThreadState {
   // If set, malloc must not be called.
   int nomalloc;
 
+  const ReportDesc *current_report;
+
   explicit ThreadState(Context *ctx, int tid, int unique_id, u64 epoch,
                        unsigned reuse_count,
                        uptr stk_addr, uptr stk_size,
@@ -410,12 +444,18 @@ struct ThreadState {
 };
 
 #ifndef SANITIZER_GO
+#if SANITIZER_MAC || SANITIZER_ANDROID
+ThreadState *cur_thread();
+void cur_thread_finalize();
+#else
 __attribute__((tls_model("initial-exec")))
 extern THREADLOCAL char cur_thread_placeholder[];
 INLINE ThreadState *cur_thread() {
   return reinterpret_cast<ThreadState *>(&cur_thread_placeholder);
 }
-#endif
+INLINE void cur_thread_finalize() { }
+#endif  // SANITIZER_MAC || SANITIZER_ANDROID
+#endif  // SANITIZER_GO
 
 class ThreadContext : public ThreadContextBase {
  public:
@@ -458,7 +498,7 @@ struct RacyAddress {
 
 struct FiredSuppression {
   ReportType type;
-  uptr pc;
+  uptr pc_or_addr;
   Suppression *supp;
 };
 
@@ -480,9 +520,11 @@ struct Context {
 
   ThreadRegistry *thread_registry;
 
+  Mutex racy_mtx;
   Vector<RacyStacks> racy_stacks;
   Vector<RacyAddress> racy_addresses;
   // Number of fired suppressions may be large enough.
+  Mutex fired_suppressions_mtx;
   InternalMmapVector<FiredSuppression> fired_suppressions;
   DDetector *dd;
 
@@ -587,8 +629,7 @@ void ForkChildAfter(ThreadState *thr, uptr pc);
 
 void ReportRace(ThreadState *thr);
 bool OutputReport(ThreadState *thr, const ScopedReport &srep);
-bool IsFiredSuppression(Context *ctx, const ScopedReport &srep,
-                        StackTrace trace);
+bool IsFiredSuppression(Context *ctx, ReportType type, StackTrace trace);
 bool IsExpectedReport(uptr addr, uptr size);
 void PrintMatchedBenignRaces();
 
@@ -675,6 +716,11 @@ void ThreadSetName(ThreadState *thr, const char *name);
 int ThreadCount(ThreadState *thr);
 void ProcessPendingSignals(ThreadState *thr);
 
+Processor *ProcCreate();
+void ProcDestroy(Processor *proc);
+void ProcWire(Processor *proc, ThreadState *thr);
+void ProcUnwire(Processor *proc, ThreadState *thr);
+
 void MutexCreate(ThreadState *thr, uptr pc, uptr addr,
                  bool rw, bool recursive, bool linker_init);
 void MutexDestroy(ThreadState *thr, uptr pc, uptr addr);
@@ -685,6 +731,7 @@ void MutexReadLock(ThreadState *thr, uptr pc, uptr addr, bool try_lock = false);
 void MutexReadUnlock(ThreadState *thr, uptr pc, uptr addr);
 void MutexReadOrWriteUnlock(ThreadState *thr, uptr pc, uptr addr);
 void MutexRepair(ThreadState *thr, uptr pc, uptr addr);  // call on EOWNERDEAD
+void MutexInvalidAccess(ThreadState *thr, uptr pc, uptr addr);
 
 void Acquire(ThreadState *thr, uptr pc, uptr addr);
 // AcquireGlobal synchronizes the current thread with all other threads.
@@ -708,7 +755,7 @@ void AcquireReleaseImpl(ThreadState *thr, uptr pc, SyncClock *c);
 // The trick is that the call preserves all registers and the compiler
 // does not treat it as a call.
 // If it does not work for you, use normal call.
-#if !SANITIZER_DEBUG && defined(__x86_64__)
+#if !SANITIZER_DEBUG && defined(__x86_64__) && !SANITIZER_MAC
 // The caller may not create the stack frame for itself at all,
 // so we create a reserve stack frame for it (1024b must be enough).
 #define HACKY_CALL(f) \
@@ -754,11 +801,7 @@ void ALWAYS_INLINE TraceAddEvent(ThreadState *thr, FastState fs,
 
 #ifndef SANITIZER_GO
 uptr ALWAYS_INLINE HeapEnd() {
-#if SANITIZER_CAN_USE_ALLOCATOR64
-  return kHeapMemEnd + PrimaryAllocator::AdditionalSize();
-#else
-  return kHeapMemEnd;
-#endif
+  return HeapMemEnd() + PrimaryAllocator::AdditionalSize();
 }
 #endif
 

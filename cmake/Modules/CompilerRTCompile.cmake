@@ -49,6 +49,10 @@ macro(clang_compile object_file source)
     translate_msvc_cflags(global_flags "${global_flags}")
   endif()
 
+  if (APPLE)
+    set(global_flags ${OSX_SYSROOT_FLAG} ${global_flags})
+  endif()
+
   # Ignore unknown warnings. CMAKE_CXX_FLAGS may contain GCC-specific options
   # which are not supported by Clang.
   list(APPEND global_flags -Wno-unknown-warning-option)
@@ -72,7 +76,7 @@ endmacro()
 macro(clang_compiler_add_cxx_check)
   if (APPLE)
     set(CMD
-      "echo '#include <iostream>' | ${COMPILER_RT_TEST_COMPILER} -E -x c++ - > /dev/null"
+      "echo '#include <iostream>' | ${COMPILER_RT_TEST_COMPILER} ${OSX_SYSROOT_FLAG} -E -x c++ - > /dev/null"
       "if [ $? != 0 ] "
       "  then echo"
       "  echo 'Your just-built clang cannot find C++ headers, which are needed to build and run compiler-rt tests.'"
@@ -86,8 +90,8 @@ macro(clang_compiler_add_cxx_check)
       "  fi"
       "  echo 'This can also be fixed by checking out the libcxx project from llvm.org and installing the headers'"
       "  echo 'into your build directory:'"
-      "  echo '  cd ${LLVM_SOURCE_DIR}/projects && svn co http://llvm.org/svn/llvm-project/libcxx/trunk libcxx'"
-      "  echo '  cd ${LLVM_BINARY_DIR} && make -C ${LLVM_SOURCE_DIR}/projects/libcxx installheaders HEADER_DIR=${LLVM_BINARY_DIR}/include'"
+      "  echo '  cd ${LLVM_MAIN_SRC_DIR}/projects && svn co http://llvm.org/svn/llvm-project/libcxx/trunk libcxx'"
+      "  echo '  cd ${LLVM_BINARY_DIR} && make -C ${LLVM_MAIN_SRC_DIR}/projects/libcxx installheaders HEADER_DIR=${LLVM_BINARY_DIR}/include'"
       "  echo"
       "  false"
       "fi"
