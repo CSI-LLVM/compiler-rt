@@ -1,6 +1,12 @@
 set(CSI_TEST_DEPS ${SANITIZER_COMMON_LIT_TEST_DEPS})
+
 if(NOT COMPILER_RT_STANDALONE_BUILD)
   list(APPEND CSI_TEST_DEPS csi)
+endif()
+
+# Add a dependency on the LTO plugin.
+if(LLVM_BINUTILS_INCDIR)
+  list(APPEND CSI_TEST_DEPS LLVMgold)
 endif()
 
 set(CSI_TESTSUITES)
