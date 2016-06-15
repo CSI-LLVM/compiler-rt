@@ -8,7 +8,7 @@ pthread_mutex_t mtx2;
 void *Thread1(void *x) {
   pthread_mutex_lock(&mtx1);
   pthread_mutex_lock(&mtx2);
-  Global = 1;
+  Global++;
   pthread_mutex_unlock(&mtx2);
   pthread_mutex_unlock(&mtx1);
   barrier_wait(&barrier);
@@ -17,7 +17,7 @@ void *Thread1(void *x) {
 
 void *Thread2(void *x) {
   barrier_wait(&barrier);
-  Global = 2;
+  Global--;
   return NULL;
 }
 

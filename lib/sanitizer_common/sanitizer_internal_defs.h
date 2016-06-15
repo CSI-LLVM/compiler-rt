@@ -16,7 +16,7 @@
 #include "sanitizer_platform.h"
 
 #ifndef SANITIZER_DEBUG
-#define SANITIZER_DEBUG 0
+# define SANITIZER_DEBUG 0
 #endif
 
 // Only use SANITIZER_*ATTRIBUTE* before the function return type!

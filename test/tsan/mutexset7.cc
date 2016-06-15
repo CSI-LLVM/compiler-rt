@@ -6,7 +6,7 @@ __thread int huge[1024*1024];
 
 void *Thread1(void *x) {
   barrier_wait(&barrier);
-  Global = 1;
+  Global++;
   return NULL;
 }
 
@@ -14,7 +14,7 @@ void *Thread2(void *x) {
   pthread_mutex_t *mtx = new pthread_mutex_t;
   pthread_mutex_init(mtx, 0);
   pthread_mutex_lock(mtx);
-  Global = 2;
+  Global--;
   pthread_mutex_unlock(mtx);
   pthread_mutex_destroy(mtx);
   delete mtx;

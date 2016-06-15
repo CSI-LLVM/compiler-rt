@@ -9,7 +9,7 @@ pthread_rwlock_t mtx3;
 void *Thread1(void *x) {
   barrier_wait(&barrier);
   pthread_mutex_lock(&mtx1);
-  Global = 1;
+  Global++;
   pthread_mutex_unlock(&mtx1);
   return NULL;
 }

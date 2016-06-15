@@ -9,14 +9,14 @@ void *Thread1(void *x) {
   barrier_wait(&barrier);
   pthread_mutex_lock(&mtx1);
   pthread_mutex_lock(&mtx2);
-  Global = 1;
+  Global++;
   pthread_mutex_unlock(&mtx2);
   pthread_mutex_unlock(&mtx1);
   return NULL;
 }
 
 void *Thread2(void *x) {
-  Global = 2;
+  Global--;
   barrier_wait(&barrier);
   return NULL;
 }
