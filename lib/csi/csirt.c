@@ -4,6 +4,8 @@
 
 #include "csi.h"
 
+#define CSIRT_API __attribute__((visibility("default")))
+
 // ------------------------------------------------------------------------
 // Front end data (FED) table structures.
 // ------------------------------------------------------------------------
@@ -137,7 +139,7 @@ static inline instrumentation_counts_t compute_inst_counts(unit_fed_table_t *uni
 
 // A call to this is inserted by the CSI compiler pass, and occurs
 // before main().
-void __csirt_unit_init(const char * const name,
+CSIRT_API void __csirt_unit_init(const char * const name,
                        unit_fed_table_t *unit_fed_tables,
                        __csi_init_callsite_to_functions callsite_to_func_init) {
     // TODO(ddoucet): threadsafety
@@ -160,31 +162,31 @@ void __csirt_unit_init(const char * const name,
     __csi_unit_init(name, compute_inst_counts(unit_fed_tables));
 }
 
-source_loc_t const * __csi_get_func_source_loc(const csi_id_t func_id) {
+CSIRT_API source_loc_t const * __csi_get_func_source_loc(const csi_id_t func_id) {
     return get_fed_entry(FED_TYPE_FUNCTIONS, func_id);
 }
 
-source_loc_t const * __csi_get_func_exit_source_loc(const csi_id_t func_exit_id) {
+CSIRT_API source_loc_t const * __csi_get_func_exit_source_loc(const csi_id_t func_exit_id) {
     return get_fed_entry(FED_TYPE_FUNCTION_EXIT, func_exit_id);
 }
 
-source_loc_t const * __csi_get_bb_source_loc(const csi_id_t bb_id) {
+CSIRT_API source_loc_t const * __csi_get_bb_source_loc(const csi_id_t bb_id) {
     return get_fed_entry(FED_TYPE_BASICBLOCK, bb_id);
 }
 
-source_loc_t const * __csi_get_callsite_source_loc(const csi_id_t callsite_id) {
+CSIRT_API source_loc_t const * __csi_get_callsite_source_loc(const csi_id_t callsite_id) {
     return get_fed_entry(FED_TYPE_CALLSITE, callsite_id);
 }
 
-source_loc_t const * __csi_get_load_source_loc(const csi_id_t load_id) {
+CSIRT_API source_loc_t const * __csi_get_load_source_loc(const csi_id_t load_id) {
     return get_fed_entry(FED_TYPE_LOAD, load_id);
 }
 
-source_loc_t const * __csi_get_store_source_loc(const csi_id_t store_id) {
+CSIRT_API source_loc_t const * __csi_get_store_source_loc(const csi_id_t store_id) {
     return get_fed_entry(FED_TYPE_STORE, store_id);
 }
 
-bool __csirt_is_callsite_target_unknown(const csi_id_t callsite_id, const csi_id_t func_id) {
+CSIRT_API bool __csirt_is_callsite_target_unknown(const csi_id_t callsite_id, const csi_id_t func_id) {
     return func_id == -1;
 }
 
