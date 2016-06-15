@@ -68,10 +68,12 @@ static void ensure_fed_table_capacity(fed_type_t fed_type, int64_t num_new_entri
     }
     fed_table_t *table = &fed_tables[fed_type];
     int64_t total_num_entries = table->num_entries + num_new_entries;
-    table->entries = (source_loc_t *)realloc(table->entries,
-                                             total_num_entries * sizeof(source_loc_t));
-    table->num_entries = total_num_entries;
-    assert(table->entries != NULL);
+    if (total_num_entries > 0) {
+        table->entries = (source_loc_t *)realloc(table->entries,
+                                                 total_num_entries * sizeof(source_loc_t));
+        table->num_entries = total_num_entries;
+        assert(table->entries != NULL);
+    }
 }
 
 // Add a new FED table of the given type.
@@ -102,6 +104,7 @@ static inline source_loc_t const * get_fed_entry(fed_type_t fed_type, const csi_
     // TODO(ddoucet): threadsafety
     fed_table_t *table = &fed_tables[fed_type];
     if (csi_id < table->num_entries) {
+        assert(table->entries != NULL);
         return &table->entries[csi_id];
     } else {
         return NULL;
