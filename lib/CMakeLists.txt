@@ -56,4 +56,8 @@ if(COMPILER_RT_BUILD_SANITIZERS)
   if(COMPILER_RT_HAS_SCUDO)
     add_subdirectory(scudo)
   endif()
+  
+  if(COMPILER_RT_HAS_CSI)
+    add_subdirectory(csi)
+  endif()
 endif()
