@@ -26,6 +26,8 @@ EXTERN_C
 
 typedef int64_t csi_id_t;
 
+#define UNKNOWN_CSI_ID ((csi_id_t)-1)
+
 typedef struct {
   csi_id_t num_bb;
   csi_id_t num_callsite;
@@ -86,8 +88,6 @@ source_loc_t const * __csi_get_bb_source_loc(const csi_id_t bb_id);
 source_loc_t const * __csi_get_callsite_source_loc(const csi_id_t call_id);
 source_loc_t const * __csi_get_load_source_loc(const csi_id_t load_id);
 source_loc_t const * __csi_get_store_source_loc(const csi_id_t store_id);
-
-bool __csirt_is_callsite_target_unknown(const csi_id_t csi_id, const csi_id_t func_id);
 
 EXTERN_C_END
 

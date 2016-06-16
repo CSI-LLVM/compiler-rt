@@ -186,8 +186,4 @@ CSIRT_API source_loc_t const * __csi_get_store_source_loc(const csi_id_t store_i
     return get_fed_entry(FED_TYPE_STORE, store_id);
 }
 
-CSIRT_API bool __csirt_is_callsite_target_unknown(const csi_id_t callsite_id, const csi_id_t func_id) {
-    return func_id == -1;
-}
-
 EXTERN_C_END
