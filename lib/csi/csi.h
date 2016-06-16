@@ -89,6 +89,12 @@ source_loc_t const * __csi_get_callsite_source_loc(const csi_id_t call_id);
 source_loc_t const * __csi_get_load_source_loc(const csi_id_t load_id);
 source_loc_t const * __csi_get_store_source_loc(const csi_id_t store_id);
 
+// Property bitmasks.
+
+// Load property: the load is a read-before-write on the address in
+// the same basic block.
+#define CSI_PROP_LOAD_READ_BEFORE_WRITE_IN_BB 0x1
+
 EXTERN_C_END
 
 #endif
