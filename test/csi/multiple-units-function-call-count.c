@@ -1,10 +1,10 @@
-// RUN: %clang_csi_toolc %tooldir/null-tool.c -o %T/null-tool.o
-// RUN: %clang_csi_toolc %tooldir/function-call-count-tool.c -o %T/tool.o
-// RUN: %link_csi %T/tool.o %T/null-tool.o -o %T/tool.o
+// RUN: %clang_csi_toolc %tooldir/null-tool.c -o %t-null-tool.o
+// RUN: %clang_csi_toolc %tooldir/function-call-count-tool.c -o %t-tool.o
+// RUN: %link_csi %t-tool.o %t-null-tool.o -o %t-tool.o
 // RUN: %clang_csi_c %s -o %t.o
 // RUN: %clang_csi_c %supportdir/a.c -o %t.a.o
 // RUN: %clang_csi_c %supportdir/b.c -o %t.b.o
-// RUN: %clang_csi %t.o %t.a.o %t.b.o %T/tool.o %csirtlib -o %t
+// RUN: %clang_csi %t.o %t.a.o %t.b.o %t-tool.o %csirtlib -o %t
 // RUN: %run %t | FileCheck %s
 
 #include <stdio.h>
