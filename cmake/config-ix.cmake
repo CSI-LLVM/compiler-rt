@@ -160,6 +160,7 @@ set(ALL_UBSAN_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64}
 set(ALL_SAFESTACK_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM64} ${MIPS32} ${MIPS64})
 set(ALL_CFI_SUPPORTED_ARCH ${X86} ${X86_64} ${MIPS64})
 set(ALL_ESAN_SUPPORTED_ARCH ${X86_64})
+set(ALL_CSI_SUPPORTED_ARCH ${X86_64})
 set(ALL_SCUDO_SUPPORTED_ARCH ${X86_64})
 
 if(APPLE)
@@ -214,13 +215,13 @@ if(APPLE)
 
   # We're setting the flag manually for each target OS
   set(CMAKE_OSX_DEPLOYMENT_TARGET "")
-  
+
   set(DARWIN_COMMON_CFLAGS -stdlib=libc++)
   set(DARWIN_COMMON_LINKFLAGS
     -stdlib=libc++
     -lc++
     -lc++abi)
-  
+
   check_linker_flag("-fapplication-extension" COMPILER_RT_HAS_APP_EXTENSION)
   if(COMPILER_RT_HAS_APP_EXTENSION)
     list(APPEND DARWIN_COMMON_LINKFLAGS "-fapplication-extension")
@@ -241,7 +242,7 @@ if(APPLE)
   # Figure out which arches to use for each OS
   darwin_get_toolchain_supported_archs(toolchain_arches)
   message(STATUS "Toolchain supported arches: ${toolchain_arches}")
-  
+
   if(NOT MACOSX_VERSION_MIN_FLAG)
     darwin_test_archs(osx
       DARWIN_osx_ARCHS
@@ -347,6 +348,9 @@ if(APPLE)
   list_intersect(ESAN_SUPPORTED_ARCH
     ALL_ESAN_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
+  list_intersect(CSI_SUPPORTED_ARCH
+    ALL_CSI_SUPPORTED_ARCH
+    SANITIZER_COMMON_SUPPORTED_ARCH)
   list_intersect(SCUDO_SUPPORTED_ARCH
     ALL_SCUDO_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
@@ -371,6 +375,7 @@ else()
     ${ALL_SAFESTACK_SUPPORTED_ARCH})
   filter_available_targets(CFI_SUPPORTED_ARCH ${ALL_CFI_SUPPORTED_ARCH})
   filter_available_targets(ESAN_SUPPORTED_ARCH ${ALL_ESAN_SUPPORTED_ARCH})
+  filter_available_targets(CSI_SUPPORTED_ARCH ${ALL_CSI_SUPPORTED_ARCH})
   filter_available_targets(SCUDO_SUPPORTED_ARCH
     ${ALL_SCUDO_SUPPORTED_ARCH})
 endif()
@@ -486,10 +491,16 @@ else()
   set(COMPILER_RT_HAS_ESAN FALSE)
 endif()
 
+if (COMPILER_RT_HAS_SANITIZER_COMMON AND CSI_SUPPORTED_ARCH AND
+    OS_NAME MATCHES "Linux")
+  set(COMPILER_RT_HAS_CSI TRUE)
+else()
+  set(COMPILER_RT_HAS_CSI FALSE)
+endif()
+
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND SCUDO_SUPPORTED_ARCH AND
     OS_NAME MATCHES "Linux")
   set(COMPILER_RT_HAS_SCUDO TRUE)
 else()
   set(COMPILER_RT_HAS_SCUDO FALSE)
 endif()
-
