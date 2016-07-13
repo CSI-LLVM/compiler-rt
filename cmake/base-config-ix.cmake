@@ -8,6 +8,7 @@ check_include_file(unwind.h HAVE_UNWIND_H)
 
 # Top level target used to build all compiler-rt libraries.
 add_custom_target(compiler-rt ALL)
+set_target_properties(compiler-rt PROPERTIES FOLDER "Compiler-RT Misc")
 
 # Setting these variables from an LLVM build is sufficient that compiler-rt can
 # construct the output paths, so it can behave as if it were in-tree here.
@@ -59,10 +60,6 @@ elseif("${COMPILER_RT_TEST_COMPILER}" MATCHES "clang.*.exe$")
   set(COMPILER_RT_TEST_COMPILER_ID Clang)
 else()
   set(COMPILER_RT_TEST_COMPILER_ID GNU)
-endif()
-
-if ("${COMPILER_RT_DEFAULT_TARGET_ABI}" STREQUAL "androideabi")
-  set(ANDROID 1)
 endif()
 
 string(TOLOWER ${CMAKE_SYSTEM_NAME} COMPILER_RT_OS_DIR)
