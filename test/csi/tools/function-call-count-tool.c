@@ -13,6 +13,7 @@ void __csi_init() {
     atexit(report);
 }
 
-void __csi_before_call(const csi_id_t call_id, const csi_id_t func_id) {
+void __csi_before_call(const csi_id_t call_id, const csi_id_t func_id,
+                       const uint64_t prop) {
     num_function_calls++;
 }

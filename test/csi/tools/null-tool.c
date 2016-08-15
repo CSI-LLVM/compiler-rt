@@ -25,15 +25,17 @@ WEAK void __csi_after_store(const csi_id_t store_id,
                             const int32_t num_bytes,
                             const uint64_t prop) {}
 
-WEAK void __csi_func_entry(const csi_id_t func_id) {}
+WEAK void __csi_func_entry(const csi_id_t func_id, const uint64_t prop) {}
 
 WEAK void __csi_func_exit(const csi_id_t func_exit_id,
-                          const csi_id_t func_id) {}
+                          const csi_id_t func_id, const uint64_t prop) {}
 
-WEAK void __csi_bb_entry(const csi_id_t bb_id) {}
+WEAK void __csi_bb_entry(const csi_id_t bb_id, const uint64_t prop) {}
 
-WEAK void __csi_bb_exit(const csi_id_t bb_id) {}
+WEAK void __csi_bb_exit(const csi_id_t bb_id, const uint64_t prop) {}
 
-WEAK void __csi_before_call(csi_id_t callsite_id, csi_id_t func_id) {}
+WEAK void __csi_before_call(csi_id_t callsite_id, csi_id_t func_id,
+                            const uint64_t prop) {}
 
-WEAK void __csi_after_call(csi_id_t callsite_id, csi_id_t func_id) {}
+WEAK void __csi_after_call(csi_id_t callsite_id, csi_id_t func_id,
+                           const uint64_t prop) {}
