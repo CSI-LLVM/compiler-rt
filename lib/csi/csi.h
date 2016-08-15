@@ -37,6 +37,8 @@ typedef struct {
   csi_id_t num_store;
 } instrumentation_counts_t;
 
+extern __thread bool __csi_disable_instrumentation;
+
 WEAK void __csi_init();
 
 WEAK void __csi_unit_init(const char * const file_name,
