@@ -21,13 +21,8 @@ void __csi_init() {
 
 void __csi_before_call(const csi_id_t call_id, const csi_id_t func_id,
                        const uint64_t prop) {
-    if (__csi_disable_instrumentation) return;
-    __csi_disable_instrumentation = true;
-
     global_vector->push_back(call_id);
     num_function_calls++;
-
-    __csi_disable_instrumentation = false;
 }
 
 }
