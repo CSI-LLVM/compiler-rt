@@ -4,6 +4,9 @@
 
 #include "csi.h"
 
+// Compile-time assert the csi_prop_t struct is 64 bits.
+static_assert(sizeof(csi_prop_t) == 8, "Size of csi_prop_t is not 64 bits.");
+
 #define CSIRT_API __attribute__((visibility("default")))
 
 // ------------------------------------------------------------------------
