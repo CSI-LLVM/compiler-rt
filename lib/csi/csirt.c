@@ -122,7 +122,8 @@ static inline source_loc_t const * get_fed_entry(fed_type_t fed_type, const csi_
 
 EXTERN_C
 
-__thread bool __csi_disable_instrumentation;
+// Not used at the moment
+// __thread bool __csi_disable_instrumentation;
 
 typedef struct {
     int64_t num_entries;
@@ -148,7 +149,7 @@ CSIRT_API void __csirt_unit_init(const char * const name,
                        unit_fed_table_t *unit_fed_tables,
                        __csi_init_callsite_to_functions callsite_to_func_init) {
     // Make sure we don't instrument things in __csi_init or __csi_unit init.
-    __csi_disable_instrumentation = true;
+    // __csi_disable_instrumentation = true;
 
     // TODO(ddoucet): threadsafety
     if (!csi_init_called) {
@@ -170,7 +171,7 @@ CSIRT_API void __csirt_unit_init(const char * const name,
     __csi_unit_init(name, compute_inst_counts(unit_fed_tables));
 
     // Reset disable flag.
-    __csi_disable_instrumentation = false;
+    // __csi_disable_instrumentation = false;
 }
 
 CSIRT_API source_loc_t const * __csi_get_func_source_loc(const csi_id_t func_id) {
