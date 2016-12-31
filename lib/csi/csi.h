@@ -89,6 +89,7 @@ WEAK void __csi_after_store(const csi_id_t store_id,
 // This struct is mirrored in ComprehensiveStaticInstrumentation.cpp,
 // FrontEndDataTable::getSourceLocStructType.
 typedef struct {
+    char *name;
     // TODO(ddoucet): Why is this 32 bits?
     int32_t line_number;
     char *filename;
