@@ -40,51 +40,98 @@ typedef struct {
 // Property bitfields.
 
 typedef struct {
-  // A load is a read-before-write on the address in the same basic block.
-  unsigned load_read_before_write_in_bb : 1;
+  // Pad struct to 64 total bits.
+  uint64_t _padding : 64;
+} func_prop_t;
+
+typedef struct {
+  // Pad struct to 64 total bits.
+  uint64_t _padding : 64;
+} func_exit_prop_t;
+
+typedef struct {
+  // Pad struct to 64 total bits.
+  uint64_t _padding : 64;
+} bb_prop_t;
+
+typedef struct {
+  // The call is indirect.
+  unsigned is_indirect : 1;
   // Pad struct to 64 total bits.
   uint64_t _padding : 63;
-} csi_prop_t;
+} call_prop_t;
+
+typedef struct {
+  // The alignment of the load.
+  unsigned alignment : 8;
+  // The loaded address is in a vtable.
+  unsigned is_vtable_access : 1;
+  // The loaded address points to constant data.
+  unsigned is_constant : 1;
+  // The loaded address is on the stack.
+  unsigned is_on_stack : 1;
+  // The loaded address cannot be captured.
+  unsigned may_be_captured : 1;
+  // The loaded address is read before it is written in the same basic block.
+  unsigned is_read_before_write_in_bb : 1;
+  // Pad struct to 64 total bits.
+  uint64_t _padding : 51;
+} load_prop_t;
+
+typedef struct {
+  // The alignment of the store.
+  unsigned alignment : 8;
+  // The stored address is in a vtable.
+  unsigned is_vtable_access : 1;
+  // The stored address points to constant data.
+  unsigned is_constant : 1;
+  // The stored address is on the stack.
+  unsigned is_on_stack : 1;
+  // The stored address cannot be captured.
+  unsigned may_be_captured : 1;
+  // Pad struct to 64 total bits.
+  uint64_t _padding : 52;
+} store_prop_t;
 
 WEAK void __csi_init();
 
 WEAK void __csi_unit_init(const char * const file_name,
                           const instrumentation_counts_t counts);
 
-WEAK void __csi_func_entry(const csi_id_t func_id, const csi_prop_t prop);
+WEAK void __csi_func_entry(const csi_id_t func_id, const func_prop_t prop);
 
 WEAK void __csi_func_exit(const csi_id_t func_exit_id,
-                          const csi_id_t func_id, const csi_prop_t prop);
+                          const csi_id_t func_id, const func_exit_prop_t prop);
 
-WEAK void __csi_bb_entry(const csi_id_t bb_id, const csi_prop_t prop);
+WEAK void __csi_bb_entry(const csi_id_t bb_id, const bb_prop_t prop);
 
-WEAK void __csi_bb_exit(const csi_id_t bb_id, const csi_prop_t prop);
+WEAK void __csi_bb_exit(const csi_id_t bb_id, const bb_prop_t prop);
 
 WEAK void __csi_before_call(const csi_id_t call_id, const csi_id_t func_id,
-                            const csi_prop_t prop);
+                            const call_prop_t prop);
 
 WEAK void __csi_after_call(const csi_id_t call_id, const csi_id_t func_id,
-                           const csi_prop_t prop);
+                           const call_prop_t prop);
 
 WEAK void __csi_before_load(const csi_id_t load_id,
                             const void *addr,
                             const int32_t num_bytes,
-                            const csi_prop_t prop);
+                            const load_prop_t prop);
 
 WEAK void __csi_after_load(const csi_id_t load_id,
                            const void *addr,
                            const int32_t num_bytes,
-                           const csi_prop_t prop);
+                           const load_prop_t prop);
 
 WEAK void __csi_before_store(const csi_id_t store_id,
                              const void *addr,
                              const int32_t num_bytes,
-                             const csi_prop_t prop);
+                             const store_prop_t prop);
 
 WEAK void __csi_after_store(const csi_id_t store_id,
                             const void *addr,
                             const int32_t num_bytes,
-                            const csi_prop_t prop);
+                            const store_prop_t prop);
 
 // This struct is mirrored in ComprehensiveStaticInstrumentation.cpp,
 // FrontEndDataTable::getSourceLocStructType.

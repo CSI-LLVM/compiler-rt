@@ -4,8 +4,13 @@
 
 #include "csi.h"
 
-// Compile-time assert the csi_prop_t struct is 64 bits.
-static_assert(sizeof(csi_prop_t) == 8, "Size of csi_prop_t is not 64 bits.");
+// Compile-time assert the property structs are 64 bits.
+static_assert(sizeof(func_prop_t) == 8, "Size of func_prop_t is not 64 bits.");
+static_assert(sizeof(func_exit_prop_t) == 8, "Size of func_exit_prop_t is not 64 bits.");
+static_assert(sizeof(bb_prop_t) == 8, "Size of bb_prop_t is not 64 bits.");
+static_assert(sizeof(call_prop_t) == 8, "Size of call_prop_t is not 64 bits.");
+static_assert(sizeof(load_prop_t) == 8, "Size of load_prop_t is not 64 bits.");
+static_assert(sizeof(store_prop_t) == 8, "Size of store_prop_t is not 64 bits.");
 
 #define CSIRT_API __attribute__((visibility("default")))
 
